@@ -1,0 +1,2906 @@
+import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/material.dart';
+
+import '../models/student_model.dart';
+import '../models/teacher_model.dart';
+import '../services/account_service.dart';
+import '../services/mock_account_service.dart';
+import '../services/mock_auth_service.dart';
+
+import 'create_account_screen.dart';
+import 'login_screen.dart';
+import 'registered_accounts_screen.dart';
+
+// ============================================================
+// DASHBOARD COLORS
+// ============================================================
+
+const Color dashboardBackground = Color(0xFFF8F5F0);
+const Color dashboardSidebar = Color(0xFFDDB98D);
+const Color dashboardBrown = Color(0xFF4D2F18);
+const Color dashboardAccent = Color(0xFFA56B2F);
+const Color dashboardMuted = Color(0xFF9A8A79);
+const Color dashboardBorder = Color(0xFFEEE8DF);
+const Color dashboardLightBrown = Color(0xFFF6EBDD);
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+
+class DashboardScreen extends StatefulWidget {
+  final AccountService? accountService;
+
+  const DashboardScreen({
+    super.key,
+    this.accountService,
+  });
+
+  @override
+  State<DashboardScreen> createState() =>
+      _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  late final AccountService accountService;
+
+  List<StudentModel> students = [];
+  List<TeacherModel> teachers = [];
+
+  bool loadingAccounts = true;
+
+  // ============================================================
+  // LIVE ACCOUNT TOTALS
+  // ============================================================
+
+  int get totalStudents => students.length;
+
+  int get totalTeachers => teachers.length;
+
+  int get totalAccounts =>
+      totalStudents + totalTeachers;
+
+  int get activeAccounts {
+    final int activeStudents = students.where(
+      (StudentModel student) {
+        return student.status.toLowerCase() ==
+            'active';
+      },
+    ).length;
+
+    final int activeTeachers = teachers.where(
+      (TeacherModel teacher) {
+        return teacher.status.toLowerCase() ==
+            'active';
+      },
+    ).length;
+
+    return activeStudents + activeTeachers;
+  }
+
+  // ============================================================
+  // TEMPORARY SCORE DATA
+  //
+  // Firebase can replace these later.
+  // ============================================================
+
+  static const int averageScore = 78;
+
+  static const List<_ScoreCategory> scoreCategories = [
+    _ScoreCategory(
+      label: 'Excellent',
+      count: 4,
+      color: Color(0xFF3CA667),
+    ),
+    _ScoreCategory(
+      label: 'Good',
+      count: 6,
+      color: Color(0xFF6DA9DF),
+    ),
+    _ScoreCategory(
+      label: 'Average',
+      count: 3,
+      color: Color(0xFFE4A849),
+    ),
+    _ScoreCategory(
+      label: 'Needs Improvement',
+      count: 1,
+      color: Color(0xFFD87567),
+    ),
+  ];
+
+  static const List<double> learningAreaScores = [
+    82,
+    76,
+    79,
+  ];
+
+  static const List<String> learningAreaLabels = [
+    'English',
+    'Mathematics',
+    'Science',
+  ];
+
+  static const List<double> trendScores = [
+    62,
+    67,
+    71,
+    70,
+    74,
+    77,
+    78,
+  ];
+
+  static const List<String> trendLabels = [
+    'Aug 1',
+    'Aug 5',
+    'Aug 9',
+    'Aug 13',
+    'Aug 17',
+    'Aug 21',
+    'Aug 25',
+  ];
+
+  static const List<_ActivityData> recentActivities = [
+    _ActivityData(
+      time: '10:42 AM',
+      student: 'Juan Dela Cruz',
+      activity: 'Reading Activity',
+      learningArea: 'English',
+      score: '85%',
+    ),
+    _ActivityData(
+      time: '9:15 AM',
+      student: 'Maria Santos',
+      activity: 'Number Activity',
+      learningArea: 'Mathematics',
+      score: '92%',
+    ),
+    _ActivityData(
+      time: 'Yesterday',
+      student: 'Pedro Reyes',
+      activity: 'Living Things',
+      learningArea: 'Science',
+      score: '76%',
+    ),
+    _ActivityData(
+      time: 'Yesterday',
+      student: 'Ana Garcia',
+      activity: 'Account Registration',
+      learningArea: 'Student Account',
+      score: '-',
+    ),
+  ];
+
+  // ============================================================
+  // INITIALIZE
+  // ============================================================
+
+  @override
+  void initState() {
+    super.initState();
+
+    accountService =
+        widget.accountService ??
+        MockAccountService.instance;
+
+    _loadAccounts();
+  }
+
+  // ============================================================
+  // LOAD ACCOUNTS
+  // ============================================================
+
+  Future<void> _loadAccounts() async {
+    if (mounted) {
+      setState(() {
+        loadingAccounts = true;
+      });
+    }
+
+    try {
+      final List<StudentModel> loadedStudents =
+          await accountService.getStudents();
+
+      final List<TeacherModel> loadedTeachers =
+          await accountService.getTeachers();
+
+      if (!mounted) return;
+
+      setState(() {
+        students = loadedStudents;
+        teachers = loadedTeachers;
+        loadingAccounts = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        loadingAccounts = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.toString(),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: dashboardBackground,
+
+      drawer: _buildDrawer(),
+
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        foregroundColor: dashboardBrown,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        titleSpacing: 0,
+
+        title: const Text(
+          'Dashboard',
+          style: TextStyle(
+            color: dashboardBrown,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed:
+                loadingAccounts
+                    ? null
+                    : _loadAccounts,
+            icon: const Icon(
+              Icons.refresh_rounded,
+              color: dashboardAccent,
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.only(
+              right: 14,
+            ),
+            child: Container(
+              width: 38,
+              height: 38,
+              decoration: const BoxDecoration(
+                color: dashboardLightBrown,
+                shape: BoxShape.circle,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Image.asset(
+                'assets/images/admin.png',
+                fit: BoxFit.cover,
+                errorBuilder: (
+                  BuildContext context,
+                  Object error,
+                  StackTrace? stackTrace,
+                ) {
+                  return const Icon(
+                    Icons.person_rounded,
+                    color: dashboardAccent,
+                    size: 21,
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+
+      body: SafeArea(
+        child: RefreshIndicator(
+          color: dashboardAccent,
+          onRefresh: _loadAccounts,
+
+          child: LayoutBuilder(
+            builder: (
+              BuildContext context,
+              BoxConstraints constraints,
+            ) {
+              final bool verySmallPhone =
+                  constraints.maxWidth < 340;
+
+              return SingleChildScrollView(
+                physics:
+                    const AlwaysScrollableScrollPhysics(),
+
+                padding: EdgeInsets.fromLTRB(
+                  verySmallPhone ? 12 : 16,
+                  18,
+                  verySmallPhone ? 12 : 16,
+                  30,
+                ),
+
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints:
+                        const BoxConstraints(
+                      maxWidth: 620,
+                    ),
+
+                    child: Column(
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
+
+                      children: [
+                        // ================================
+                        // HEADER
+                        // ================================
+
+                        const Text(
+                          'Welcome back, Admin!',
+                          style: TextStyle(
+                            color: dashboardBrown,
+                            fontSize: 23,
+                            fontWeight:
+                                FontWeight.w700,
+                          ),
+                        ),
+
+                        const SizedBox(height: 5),
+
+                        const Text(
+                          "Here's what's happening in LearnAble.",
+                          style: TextStyle(
+                            color: dashboardMuted,
+                            fontSize: 13,
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // ================================
+                        // ACCOUNT SUMMARY
+                        // ================================
+
+                        _buildSummaryGrid(
+                          verySmallPhone:
+                              verySmallPhone,
+                        ),
+
+                        const SizedBox(height: 18),
+
+                        // ================================
+                        // SCORE OVERVIEW
+                        // ================================
+
+                        _buildScoreOverview(),
+
+                        const SizedBox(height: 16),
+
+                        // ================================
+                        // LEARNING AREA
+                        // ================================
+
+                        _buildLearningAreaPanel(),
+
+                        const SizedBox(height: 16),
+
+                        // ================================
+                        // TREND
+                        // ================================
+
+                        _buildTrendPanel(),
+
+                        const SizedBox(height: 16),
+
+                        // ================================
+                        // RECENT ACTIVITY
+                        // ================================
+
+                        _buildRecentActivity(),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // SUMMARY GRID
+  // ============================================================
+
+  Widget _buildSummaryGrid({
+    required bool verySmallPhone,
+  }) {
+    if (loadingAccounts) {
+      return const _DashboardPanel(
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            vertical: 28,
+          ),
+          child: Center(
+            child: CircularProgressIndicator(
+              color: dashboardAccent,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final List<_SummaryItem> items = [
+      _SummaryItem(
+        title: 'Total Students',
+        value: '$totalStudents',
+        subtitle: 'Registered students',
+        icon: Icons.people_alt_rounded,
+        iconBackground:
+            const Color(0xFFF7D6C4),
+        iconColor:
+            const Color(0xFFE36A35),
+      ),
+      _SummaryItem(
+        title: 'Total Teachers',
+        value: '$totalTeachers',
+        subtitle: 'Registered teachers',
+        icon: Icons.co_present_rounded,
+        iconBackground:
+            const Color(0xFFEEE0D2),
+        iconColor:
+            const Color(0xFF713B16),
+      ),
+      _SummaryItem(
+        title: 'Active Accounts',
+        value: '$activeAccounts',
+        subtitle: 'Currently active',
+        icon: Icons.check_circle_rounded,
+        iconBackground:
+            const Color(0xFFDFF3E7),
+        iconColor:
+            const Color(0xFF32A866),
+        valueColor:
+            const Color(0xFF319257),
+      ),
+      _SummaryItem(
+        title: 'Total Accounts',
+        value: '$totalAccounts',
+        subtitle: 'Students + Teachers',
+        icon: Icons.person_rounded,
+        iconBackground:
+            const Color(0xFFFFF0C8),
+        iconColor:
+            const Color(0xFFD99B16),
+      ),
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics:
+          const NeverScrollableScrollPhysics(),
+      itemCount: items.length,
+
+      gridDelegate:
+          SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount:
+            verySmallPhone ? 1 : 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        mainAxisExtent: 110,
+      ),
+
+      itemBuilder: (
+        BuildContext context,
+        int index,
+      ) {
+        return _SummaryCard(
+          item: items[index],
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // SCORE OVERVIEW
+  // ============================================================
+
+  Widget _buildScoreOverview() {
+    return _DashboardPanel(
+      child: Column(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+
+        children: [
+          _SectionHeader(
+            icon:
+                Icons.pie_chart_rounded,
+
+            title:
+                "Children's Score Overview",
+
+            subtitle:
+                'Overall performance based on completed activities.',
+
+            buttonText:
+                'View Statistics',
+
+            onPressed: () {
+              _showScoreStatistics();
+            },
+          ),
+
+          const SizedBox(height: 20),
+
+          LayoutBuilder(
+            builder: (
+              BuildContext context,
+              BoxConstraints constraints,
+            ) {
+              final bool wide =
+                  constraints.maxWidth >= 500;
+
+              final Widget chart =
+                  SizedBox(
+                height: 190,
+                child: _scorePieChart(),
+              );
+
+              final Widget details =
+                  _scoreDetails();
+
+              if (wide) {
+                return Row(
+                  children: [
+                    Expanded(
+                      child: chart,
+                    ),
+
+                    const SizedBox(width: 18),
+
+                    Expanded(
+                      child: details,
+                    ),
+                  ],
+                );
+              }
+
+              return Column(
+                children: [
+                  chart,
+
+                  const SizedBox(height: 12),
+
+                  details,
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // PIE CHART
+  // ============================================================
+
+  Widget _scorePieChart() {
+    return PieChart(
+      PieChartData(
+        centerSpaceRadius: 49,
+        sectionsSpace: 3,
+
+        borderData: FlBorderData(
+          show: false,
+        ),
+
+        pieTouchData: PieTouchData(
+          enabled: true,
+        ),
+
+        sections:
+            scoreCategories.map(
+          (_ScoreCategory category) {
+            return PieChartSectionData(
+              value:
+                  category.count.toDouble(),
+              color: category.color,
+              radius: 30,
+              showTitle: false,
+            );
+          },
+        ).toList(),
+      ),
+    );
+  }
+
+  // ============================================================
+  // SCORE DETAILS
+  // ============================================================
+
+  Widget _scoreDetails() {
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+
+          padding:
+              const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 15,
+          ),
+
+          decoration: BoxDecoration(
+            color:
+                const Color(0xFFFBF7F2),
+
+            borderRadius:
+                BorderRadius.circular(
+              15,
+            ),
+          ),
+
+          child: Column(
+            children: [
+              const Text(
+                'Average Score',
+                style: TextStyle(
+                  color: dashboardMuted,
+                  fontSize: 11,
+                ),
+              ),
+
+              const SizedBox(height: 3),
+
+              Text(
+                '$averageScore%',
+                style: const TextStyle(
+                  color: dashboardBrown,
+                  fontSize: 31,
+                  fontWeight:
+                      FontWeight.w700,
+                ),
+              ),
+
+              const SizedBox(height: 1),
+
+              const Text(
+                'Good',
+                style: TextStyle(
+                  color: dashboardAccent,
+                  fontSize: 10,
+                  fontWeight:
+                      FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        ...scoreCategories.map(
+          (_ScoreCategory category) {
+            return _ScoreLegendRow(
+              category: category,
+            );
+          },
+        ),
+
+        const SizedBox(height: 10),
+
+        Container(
+          width: double.infinity,
+
+          padding:
+              const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
+
+          decoration: BoxDecoration(
+            color:
+                const Color(0xFFF7EEE4),
+
+            borderRadius:
+                BorderRadius.circular(
+              10,
+            ),
+          ),
+
+          child: const Text(
+            'Scores are being recorded for completed activities.',
+            style: TextStyle(
+              color: Color(0xFF80664E),
+              fontSize: 10,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ============================================================
+  // LEARNING AREA PANEL
+  // ============================================================
+
+  Widget _buildLearningAreaPanel() {
+    return _DashboardPanel(
+      child: Column(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+
+        children: [
+          _SectionHeader(
+            icon:
+                Icons.menu_book_rounded,
+
+            title:
+                'Scores by Learning Area',
+
+            subtitle:
+                'Average scores across learning areas.',
+
+            actionIcon:
+                Icons.open_in_full_rounded,
+
+            onPressed: () {
+              _showChartSheet(
+                title:
+                    'Scores by Learning Area',
+
+                child:
+                    _learningAreaChart(
+                  height: 330,
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 20),
+
+          _learningAreaChart(
+            height: 225,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // BAR CHART
+  // ============================================================
+
+  Widget _learningAreaChart({
+    required double height,
+  }) {
+    return SizedBox(
+      height: height,
+
+      child: BarChart(
+        BarChartData(
+          minY: 0,
+          maxY: 100,
+
+          alignment:
+              BarChartAlignment.spaceAround,
+
+          barTouchData:
+              BarTouchData(
+            enabled: true,
+          ),
+
+          borderData:
+              FlBorderData(
+            show: false,
+          ),
+
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: 20,
+
+            getDrawingHorizontalLine:
+                (double value) {
+              return const FlLine(
+                color: dashboardBorder,
+                strokeWidth: 1,
+              );
+            },
+          ),
+
+          titlesData:
+              FlTitlesData(
+            topTitles:
+                const AxisTitles(
+              sideTitles:
+                  SideTitles(
+                showTitles: false,
+              ),
+            ),
+
+            rightTitles:
+                const AxisTitles(
+              sideTitles:
+                  SideTitles(
+                showTitles: false,
+              ),
+            ),
+
+            leftTitles:
+                AxisTitles(
+              sideTitles:
+                  SideTitles(
+                showTitles: true,
+                reservedSize: 37,
+                interval: 20,
+
+                getTitlesWidget: (
+                  double value,
+                  TitleMeta meta,
+                ) {
+                  return SideTitleWidget(
+                    meta: meta,
+                    space: 5,
+
+                    child: Text(
+                      '${value.toInt()}%',
+
+                      style:
+                          const TextStyle(
+                        color:
+                            dashboardMuted,
+
+                        fontSize: 9,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            bottomTitles:
+                AxisTitles(
+              sideTitles:
+                  SideTitles(
+                showTitles: true,
+                reservedSize: 38,
+
+                getTitlesWidget: (
+                  double value,
+                  TitleMeta meta,
+                ) {
+                  final int index =
+                      value.toInt();
+
+                  if (index < 0 ||
+                      index >=
+                          learningAreaLabels
+                              .length) {
+                    return const SizedBox
+                        .shrink();
+                  }
+
+                  String label =
+                      learningAreaLabels[
+                          index];
+
+                  if (label ==
+                      'Mathematics') {
+                    label = 'Math';
+                  }
+
+                  return SideTitleWidget(
+                    meta: meta,
+                    space: 8,
+
+                    child: Text(
+                      label,
+
+                      style:
+                          const TextStyle(
+                        color:
+                            dashboardMuted,
+
+                        fontSize: 9,
+
+                        fontWeight:
+                            FontWeight.w500,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
+          barGroups:
+              List.generate(
+            learningAreaScores.length,
+
+            (int index) {
+              return BarChartGroupData(
+                x: index,
+
+                barRods: [
+                  BarChartRodData(
+                    toY:
+                        learningAreaScores[
+                            index],
+
+                    width: 24,
+
+                    color:
+                        dashboardAccent,
+
+                    borderRadius:
+                        BorderRadius.circular(
+                      7,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // TREND PANEL
+  // ============================================================
+
+  Widget _buildTrendPanel() {
+    return _DashboardPanel(
+      child: Column(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+
+        children: [
+          _SectionHeader(
+            icon:
+                Icons.show_chart_rounded,
+
+            title:
+                'Score Trend',
+
+            subtitle:
+                "Children's average performance over time.",
+
+            actionIcon:
+                Icons.open_in_full_rounded,
+
+            onPressed: () {
+              _showChartSheet(
+                title: 'Score Trend',
+
+                child:
+                    _trendChart(
+                  height: 330,
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 20),
+
+          _trendChart(
+            height: 225,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // LINE CHART
+  // ============================================================
+
+  Widget _trendChart({
+    required double height,
+  }) {
+    return SizedBox(
+      height: height,
+
+      child: LineChart(
+        LineChartData(
+          minX: 0,
+
+          maxX:
+              (trendScores.length - 1)
+                  .toDouble(),
+
+          minY: 0,
+          maxY: 100,
+
+          lineTouchData:
+              LineTouchData(
+            enabled: true,
+          ),
+
+          borderData:
+              FlBorderData(
+            show: false,
+          ),
+
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: 20,
+
+            getDrawingHorizontalLine:
+                (double value) {
+              return const FlLine(
+                color: dashboardBorder,
+                strokeWidth: 1,
+              );
+            },
+          ),
+
+          titlesData:
+              FlTitlesData(
+            topTitles:
+                const AxisTitles(
+              sideTitles:
+                  SideTitles(
+                showTitles: false,
+              ),
+            ),
+
+            rightTitles:
+                const AxisTitles(
+              sideTitles:
+                  SideTitles(
+                showTitles: false,
+              ),
+            ),
+
+            leftTitles:
+                AxisTitles(
+              sideTitles:
+                  SideTitles(
+                showTitles: true,
+                reservedSize: 37,
+                interval: 20,
+
+                getTitlesWidget: (
+                  double value,
+                  TitleMeta meta,
+                ) {
+                  return SideTitleWidget(
+                    meta: meta,
+                    space: 5,
+
+                    child: Text(
+                      '${value.toInt()}%',
+
+                      style:
+                          const TextStyle(
+                        color:
+                            dashboardMuted,
+
+                        fontSize: 9,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            bottomTitles:
+                AxisTitles(
+              sideTitles:
+                  SideTitles(
+                showTitles: true,
+                reservedSize: 36,
+                interval: 1,
+
+                getTitlesWidget: (
+                  double value,
+                  TitleMeta meta,
+                ) {
+                  final int index =
+                      value.toInt();
+
+                  if (index < 0 ||
+                      index >=
+                          trendLabels.length) {
+                    return const SizedBox
+                        .shrink();
+                  }
+
+                  return SideTitleWidget(
+                    meta: meta,
+                    space: 8,
+
+                    child: Text(
+                      trendLabels[index],
+
+                      style:
+                          const TextStyle(
+                        color:
+                            dashboardMuted,
+
+                        fontSize: 8,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
+          lineBarsData: [
+            LineChartBarData(
+              spots:
+                  List.generate(
+                trendScores.length,
+
+                (int index) {
+                  return FlSpot(
+                    index.toDouble(),
+
+                    trendScores[index],
+                  );
+                },
+              ),
+
+              isCurved: true,
+
+              curveSmoothness: 0.35,
+
+              color:
+                  dashboardAccent,
+
+              barWidth: 3,
+
+              isStrokeCapRound:
+                  true,
+
+              dotData:
+                  const FlDotData(
+                show: true,
+              ),
+
+              belowBarData:
+                  BarAreaData(
+                show: true,
+
+                color:
+                    const Color(
+                  0x1AA56B2F,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // RECENT ACTIVITY
+  // ============================================================
+
+  Widget _buildRecentActivity() {
+    return _DashboardPanel(
+      child: Column(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+
+        children: [
+          _SectionHeader(
+            icon:
+                Icons.history_rounded,
+
+            title:
+                'Recent Activity',
+
+            subtitle:
+                "Latest registrations and children's activities.",
+
+            buttonText:
+                'View All',
+
+            onPressed: () {
+              _showAllActivities();
+            },
+          ),
+
+          const SizedBox(height: 14),
+
+          ...recentActivities
+              .take(3)
+              .map(
+            (_ActivityData activity) {
+              return _ActivityCard(
+                activity: activity,
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // DRAWER
+  // ============================================================
+
+  Widget _buildDrawer() {
+    return Drawer(
+      width: 280,
+
+      backgroundColor:
+          dashboardSidebar,
+
+      child: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 24),
+
+            Image.asset(
+              'assets/images/logo.png',
+
+              width: 100,
+
+              height: 80,
+
+              fit: BoxFit.contain,
+
+              errorBuilder: (
+                BuildContext context,
+                Object error,
+                StackTrace? stackTrace,
+              ) {
+                return const Icon(
+                  Icons.school_rounded,
+
+                  size: 60,
+
+                  color: dashboardBrown,
+                );
+              },
+            ),
+
+            const SizedBox(height: 8),
+
+            const Text(
+              'ADMIN PANEL',
+
+              style: TextStyle(
+                color:
+                    Color(0xFF6A4320),
+
+                fontSize: 14,
+
+                fontWeight:
+                    FontWeight.w600,
+
+                letterSpacing: 3,
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            Container(
+              width: 170,
+              height: 1,
+
+              color:
+                  const Color(
+                0x18000000,
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // ==========================
+            // DASHBOARD
+            // ==========================
+
+            _DrawerButton(
+              icon:
+                  Icons.home_rounded,
+
+              label:
+                  'Dashboard',
+
+              selected:
+                  true,
+
+              onTap: () {
+                Navigator.pop(context);
+              },
+            ),
+
+            // ==========================
+            // CREATE ACCOUNT
+            // ==========================
+
+            _DrawerButton(
+              icon:
+                  Icons
+                      .person_add_alt_1_rounded,
+
+              label:
+                  'Create Account',
+
+              onTap: () {
+                Navigator.pop(context);
+
+                Navigator.pushReplacement(
+                  context,
+
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        CreateAccountScreen(
+                      accountService:
+                          accountService,
+                    ),
+                  ),
+                );
+              },
+            ),
+
+            // ==========================
+            // REGISTERED ACCOUNTS
+            // ==========================
+
+            _DrawerButton(
+              icon:
+                  Icons
+                      .people_alt_rounded,
+
+              label:
+                  'Registered Accounts',
+
+              onTap: () {
+                Navigator.pop(context);
+
+                Navigator.pushReplacement(
+                  context,
+
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        RegisteredAccountsScreen(
+                      accountService:
+                          accountService,
+                    ),
+                  ),
+                );
+              },
+            ),
+
+            const Spacer(),
+
+            const Text(
+              'Version 1.0',
+
+              style: TextStyle(
+                color:
+                    Color(0xFF87684C),
+
+                fontSize: 11,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // ==========================
+            // LOGOUT
+            // ==========================
+
+            _DrawerButton(
+              icon:
+                  Icons.logout_rounded,
+
+              label:
+                  'Logout',
+
+              onTap: () {
+                Navigator.pop(context);
+
+                _showLogoutDialog();
+              },
+            ),
+
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // LOGOUT
+  // ============================================================
+
+  void _showLogoutDialog() {
+    showDialog<void>(
+      context: context,
+
+      builder: (
+        BuildContext dialogContext,
+      ) {
+        return AlertDialog(
+          backgroundColor:
+              Colors.white,
+
+          shape:
+              RoundedRectangleBorder(
+            borderRadius:
+                BorderRadius.circular(
+              20,
+            ),
+          ),
+
+          title:
+              const Text(
+            'Logout',
+
+            style:
+                TextStyle(
+              color:
+                  dashboardBrown,
+
+              fontWeight:
+                  FontWeight.w700,
+            ),
+          ),
+
+          content:
+              const Text(
+            'Are you sure you want to logout?',
+
+            style:
+                TextStyle(
+              color:
+                  dashboardMuted,
+            ),
+          ),
+
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                );
+              },
+
+              child:
+                  const Text(
+                'Cancel',
+
+                style:
+                    TextStyle(
+                  color:
+                      dashboardMuted,
+                ),
+              ),
+            ),
+
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                );
+
+                Navigator.pushAndRemoveUntil(
+                  context,
+
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        LoginScreen(
+                      authService:
+                          MockAuthService(),
+                    ),
+                  ),
+
+                  (route) => false,
+                );
+              },
+
+              style:
+                  ElevatedButton
+                      .styleFrom(
+                backgroundColor:
+                    dashboardAccent,
+
+                foregroundColor:
+                    Colors.white,
+
+                elevation: 0,
+              ),
+
+              child:
+                  const Text(
+                'Logout',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // SCORE STATISTICS
+  // ============================================================
+
+  void _showScoreStatistics() {
+    showModalBottomSheet<void>(
+      context: context,
+
+      isScrollControlled: true,
+
+      backgroundColor:
+          Colors.transparent,
+
+      builder: (
+        BuildContext context,
+      ) {
+        return Container(
+          constraints:
+              BoxConstraints(
+            maxHeight:
+                MediaQuery.sizeOf(
+                      context,
+                    ).height *
+                    0.85,
+          ),
+
+          decoration:
+              const BoxDecoration(
+            color: Colors.white,
+
+            borderRadius:
+                BorderRadius.vertical(
+              top:
+                  Radius.circular(
+                24,
+              ),
+            ),
+          ),
+
+          child:
+              SingleChildScrollView(
+            padding:
+                const EdgeInsets
+                    .fromLTRB(
+              20,
+              12,
+              20,
+              28,
+            ),
+
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+
+              children: [
+                _sheetHandle(),
+
+                const SizedBox(height: 22),
+
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment
+                                .start,
+
+                        children: [
+                          Text(
+                            'Scoring Details',
+
+                            style:
+                                TextStyle(
+                              color:
+                                  dashboardBrown,
+
+                              fontSize: 22,
+
+                              fontWeight:
+                                  FontWeight
+                                      .w700,
+                            ),
+                          ),
+
+                          SizedBox(height: 4),
+
+                          Text(
+                            "Detailed overview of children's performance.",
+
+                            style:
+                                TextStyle(
+                              color:
+                                  dashboardMuted,
+
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    IconButton(
+                      onPressed: () {
+                        Navigator.pop(
+                          context,
+                        );
+                      },
+
+                      icon:
+                          const Icon(
+                        Icons.close_rounded,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
+
+                SizedBox(
+                  height: 220,
+
+                  child:
+                      _scorePieChart(),
+                ),
+
+                const SizedBox(height: 18),
+
+                Container(
+                  width: double.infinity,
+
+                  padding:
+                      const EdgeInsets.all(
+                    16,
+                  ),
+
+                  decoration:
+                      BoxDecoration(
+                    color:
+                        const Color(
+                      0xFFFBF7F2,
+                    ),
+
+                    borderRadius:
+                        BorderRadius.circular(
+                      15,
+                    ),
+                  ),
+
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Overall Average Score',
+
+                          style:
+                              TextStyle(
+                            color:
+                                dashboardMuted,
+
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+
+                      Text(
+                        '$averageScore%',
+
+                        style:
+                            const TextStyle(
+                          color:
+                              dashboardBrown,
+
+                          fontSize: 25,
+
+                          fontWeight:
+                              FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 15),
+
+                ...scoreCategories.map(
+                  (
+                    _ScoreCategory category,
+                  ) {
+                    return _ScoreLegendRow(
+                      category:
+                          category,
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // CHART BOTTOM SHEET
+  // ============================================================
+
+  void _showChartSheet({
+    required String title,
+    required Widget child,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+
+      isScrollControlled: true,
+
+      backgroundColor:
+          Colors.transparent,
+
+      builder: (
+        BuildContext context,
+      ) {
+        return Container(
+          padding:
+              const EdgeInsets.fromLTRB(
+            18,
+            12,
+            18,
+            24,
+          ),
+
+          decoration:
+              const BoxDecoration(
+            color: Colors.white,
+
+            borderRadius:
+                BorderRadius.vertical(
+              top:
+                  Radius.circular(
+                24,
+              ),
+            ),
+          ),
+
+          child: SafeArea(
+            child: Column(
+              mainAxisSize:
+                  MainAxisSize.min,
+
+              children: [
+                _sheetHandle(),
+
+                const SizedBox(height: 14),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+
+                        style:
+                            const TextStyle(
+                          color:
+                              dashboardBrown,
+
+                          fontSize: 19,
+
+                          fontWeight:
+                              FontWeight.w700,
+                        ),
+                      ),
+                    ),
+
+                    IconButton(
+                      onPressed: () {
+                        Navigator.pop(
+                          context,
+                        );
+                      },
+
+                      icon:
+                          const Icon(
+                        Icons.close_rounded,
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 15),
+
+                child,
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // ALL ACTIVITIES
+  // ============================================================
+
+  void _showAllActivities() {
+    showModalBottomSheet<void>(
+      context: context,
+
+      isScrollControlled: true,
+
+      backgroundColor:
+          Colors.transparent,
+
+      builder: (
+        BuildContext context,
+      ) {
+        return Container(
+          height:
+              MediaQuery.sizeOf(
+                    context,
+                  ).height *
+                  0.82,
+
+          decoration:
+              const BoxDecoration(
+            color: Colors.white,
+
+            borderRadius:
+                BorderRadius.vertical(
+              top:
+                  Radius.circular(
+                24,
+              ),
+            ),
+          ),
+
+          child: SafeArea(
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+
+                _sheetHandle(),
+
+                Padding(
+                  padding:
+                      const EdgeInsets
+                          .fromLTRB(
+                    18,
+                    16,
+                    8,
+                    12,
+                  ),
+
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment
+                                  .start,
+
+                          children: [
+                            Text(
+                              'Recent Activity',
+
+                              style:
+                                  TextStyle(
+                                color:
+                                    dashboardBrown,
+
+                                fontSize: 20,
+
+                                fontWeight:
+                                    FontWeight
+                                        .w700,
+                              ),
+                            ),
+
+                            SizedBox(height: 3),
+
+                            Text(
+                              'Latest registrations and learning activities.',
+
+                              style:
+                                  TextStyle(
+                                color:
+                                    dashboardMuted,
+
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      IconButton(
+                        onPressed: () {
+                          Navigator.pop(
+                            context,
+                          );
+                        },
+
+                        icon:
+                            const Icon(
+                          Icons.close_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const Divider(
+                  height: 1,
+                  color: dashboardBorder,
+                ),
+
+                Expanded(
+                  child:
+                      ListView.builder(
+                    padding:
+                        const EdgeInsets.all(
+                      16,
+                    ),
+
+                    itemCount:
+                        recentActivities
+                            .length,
+
+                    itemBuilder: (
+                      BuildContext context,
+                      int index,
+                    ) {
+                      return _ActivityCard(
+                        activity:
+                            recentActivities[
+                                index],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ============================================================
+// SUMMARY DATA
+// ============================================================
+
+class _SummaryItem {
+  final String title;
+  final String value;
+  final String subtitle;
+
+  final IconData icon;
+
+  final Color iconBackground;
+  final Color iconColor;
+  final Color valueColor;
+
+  const _SummaryItem({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.icon,
+    required this.iconBackground,
+    required this.iconColor,
+
+    this.valueColor =
+        dashboardBrown,
+  });
+}
+
+// ============================================================
+// SUMMARY CARD
+// ============================================================
+
+class _SummaryCard
+    extends StatelessWidget {
+  final _SummaryItem item;
+
+  const _SummaryCard({
+    required this.item,
+  });
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    return Container(
+      padding:
+          const EdgeInsets.all(
+        13,
+      ),
+
+      decoration:
+          BoxDecoration(
+        color: Colors.white,
+
+        borderRadius:
+            BorderRadius.circular(
+          17,
+        ),
+
+        border:
+            Border.all(
+          color:
+              dashboardBorder,
+        ),
+
+        boxShadow:
+            const [
+          BoxShadow(
+            color:
+                Color(
+              0x0D000000,
+            ),
+
+            blurRadius: 15,
+
+            offset:
+                Offset(
+              0,
+              5,
+            ),
+          ),
+        ],
+      ),
+
+      child: Row(
+        children: [
+          Container(
+            width: 43,
+            height: 43,
+
+            decoration:
+                BoxDecoration(
+              color:
+                  item.iconBackground,
+
+              borderRadius:
+                  BorderRadius.circular(
+                12,
+              ),
+            ),
+
+            child:
+                Icon(
+              item.icon,
+
+              color:
+                  item.iconColor,
+
+              size: 20,
+            ),
+          ),
+
+          const SizedBox(width: 10),
+
+          Expanded(
+            child:
+                Column(
+              mainAxisAlignment:
+                  MainAxisAlignment.center,
+
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+
+              children: [
+                Text(
+                  item.title,
+
+                  maxLines: 1,
+
+                  overflow:
+                      TextOverflow.ellipsis,
+
+                  style:
+                      const TextStyle(
+                    color:
+                        Color(
+                      0xFF8D7966,
+                    ),
+
+                    fontSize: 9,
+                  ),
+                ),
+
+                const SizedBox(height: 1),
+
+                Text(
+                  item.value,
+
+                  style:
+                      TextStyle(
+                    color:
+                        item.valueColor,
+
+                    fontSize: 23,
+
+                    fontWeight:
+                        FontWeight.w700,
+
+                    height: 1.1,
+                  ),
+                ),
+
+                const SizedBox(height: 2),
+
+                Text(
+                  item.subtitle,
+
+                  maxLines: 1,
+
+                  overflow:
+                      TextOverflow.ellipsis,
+
+                  style:
+                      const TextStyle(
+                    color:
+                        Color(
+                      0xFFA39485,
+                    ),
+
+                    fontSize: 8,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// DASHBOARD PANEL
+// ============================================================
+
+class _DashboardPanel
+    extends StatelessWidget {
+  final Widget child;
+
+  const _DashboardPanel({
+    required this.child,
+  });
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    return Container(
+      width:
+          double.infinity,
+
+      padding:
+          const EdgeInsets.all(
+        16,
+      ),
+
+      decoration:
+          BoxDecoration(
+        color:
+            Colors.white,
+
+        borderRadius:
+            BorderRadius.circular(
+          20,
+        ),
+
+        border:
+            Border.all(
+          color:
+              dashboardBorder,
+        ),
+
+        boxShadow:
+            const [
+          BoxShadow(
+            color:
+                Color(
+              0x0D000000,
+            ),
+
+            blurRadius: 15,
+
+            offset:
+                Offset(
+              0,
+              5,
+            ),
+          ),
+        ],
+      ),
+
+      child: child,
+    );
+  }
+}
+
+// ============================================================
+// SECTION HEADER
+// ============================================================
+
+class _SectionHeader
+    extends StatelessWidget {
+  final IconData icon;
+
+  final String title;
+  final String subtitle;
+
+  final String? buttonText;
+
+  final IconData? actionIcon;
+
+  final VoidCallback onPressed;
+
+  const _SectionHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onPressed,
+
+    this.buttonText,
+    this.actionIcon,
+  });
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    return Row(
+      crossAxisAlignment:
+          CrossAxisAlignment.start,
+
+      children: [
+        Container(
+          width: 42,
+
+          height: 42,
+
+          decoration:
+              BoxDecoration(
+            color:
+                dashboardLightBrown,
+
+            borderRadius:
+                BorderRadius.circular(
+              12,
+            ),
+          ),
+
+          child:
+              Icon(
+            icon,
+
+            color:
+                dashboardAccent,
+
+            size: 19,
+          ),
+        ),
+
+        const SizedBox(width: 10),
+
+        Expanded(
+          child:
+              Column(
+            crossAxisAlignment:
+                CrossAxisAlignment.start,
+
+            children: [
+              Text(
+                title,
+
+                style:
+                    const TextStyle(
+                  color:
+                      dashboardBrown,
+
+                  fontSize: 14,
+
+                  fontWeight:
+                      FontWeight.w700,
+                ),
+              ),
+
+              const SizedBox(height: 2),
+
+              Text(
+                subtitle,
+
+                style:
+                    const TextStyle(
+                  color:
+                      dashboardMuted,
+
+                  fontSize: 9,
+
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(width: 5),
+
+        if (buttonText != null)
+          TextButton(
+            onPressed:
+                onPressed,
+
+            style:
+                TextButton.styleFrom(
+              minimumSize:
+                  const Size(
+                40,
+                38,
+              ),
+
+              padding:
+                  const EdgeInsets.symmetric(
+                horizontal: 8,
+              ),
+
+              foregroundColor:
+                  dashboardAccent,
+            ),
+
+            child:
+                Text(
+              buttonText!,
+
+              style:
+                  const TextStyle(
+                fontSize: 9,
+
+                fontWeight:
+                    FontWeight.w600,
+              ),
+            ),
+          )
+        else
+          IconButton(
+            onPressed:
+                onPressed,
+
+            constraints:
+                const BoxConstraints(
+              minWidth: 38,
+              minHeight: 38,
+            ),
+
+            padding:
+                EdgeInsets.zero,
+
+            icon:
+                Icon(
+              actionIcon ??
+                  Icons
+                      .open_in_full_rounded,
+
+              color:
+                  dashboardAccent,
+
+              size: 18,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ============================================================
+// SCORE CATEGORY
+// ============================================================
+
+class _ScoreCategory {
+  final String label;
+
+  final int count;
+
+  final Color color;
+
+  const _ScoreCategory({
+    required this.label,
+    required this.count,
+    required this.color,
+  });
+}
+
+// ============================================================
+// SCORE LEGEND
+// ============================================================
+
+class _ScoreLegendRow
+    extends StatelessWidget {
+  final _ScoreCategory category;
+
+  const _ScoreLegendRow({
+    required this.category,
+  });
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    return Container(
+      margin:
+          const EdgeInsets.only(
+        bottom: 7,
+      ),
+
+      padding:
+          const EdgeInsets.symmetric(
+        horizontal: 11,
+        vertical: 9,
+      ),
+
+      decoration:
+          BoxDecoration(
+        color:
+            const Color(
+          0xFFFBF9F6,
+        ),
+
+        borderRadius:
+            BorderRadius.circular(
+          9,
+        ),
+      ),
+
+      child: Row(
+        children: [
+          Container(
+            width: 9,
+
+            height: 9,
+
+            decoration:
+                BoxDecoration(
+              color:
+                  category.color,
+
+              shape:
+                  BoxShape.circle,
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          Expanded(
+            child:
+                Text(
+              category.label,
+
+              style:
+                  const TextStyle(
+                color:
+                    Color(
+                  0xFF705A45,
+                ),
+
+                fontSize: 10,
+              ),
+            ),
+          ),
+
+          Text(
+            '${category.count}',
+
+            style:
+                const TextStyle(
+              color:
+                  dashboardBrown,
+
+              fontSize: 12,
+
+              fontWeight:
+                  FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// ACTIVITY DATA
+// ============================================================
+
+class _ActivityData {
+  final String time;
+
+  final String student;
+
+  final String activity;
+
+  final String learningArea;
+
+  final String score;
+
+  const _ActivityData({
+    required this.time,
+    required this.student,
+    required this.activity,
+    required this.learningArea,
+    required this.score,
+  });
+}
+
+// ============================================================
+// ACTIVITY CARD
+// ============================================================
+
+class _ActivityCard
+    extends StatelessWidget {
+  final _ActivityData activity;
+
+  const _ActivityCard({
+    required this.activity,
+  });
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    return Container(
+      margin:
+          const EdgeInsets.only(
+        bottom: 9,
+      ),
+
+      padding:
+          const EdgeInsets.all(
+        12,
+      ),
+
+      decoration:
+          BoxDecoration(
+        color:
+            const Color(
+          0xFFFCFAF7,
+        ),
+
+        borderRadius:
+            BorderRadius.circular(
+          13,
+        ),
+
+        border:
+            Border.all(
+          color:
+              dashboardBorder,
+        ),
+      ),
+
+      child:
+          Column(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+
+                height: 38,
+
+                decoration:
+                    BoxDecoration(
+                  color:
+                      dashboardLightBrown,
+
+                  borderRadius:
+                      BorderRadius.circular(
+                    10,
+                  ),
+                ),
+
+                child:
+                    const Icon(
+                  Icons.history_rounded,
+
+                  color:
+                      dashboardAccent,
+
+                  size: 18,
+                ),
+              ),
+
+              const SizedBox(width: 10),
+
+              Expanded(
+                child:
+                    Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+
+                  children: [
+                    Text(
+                      activity.student,
+
+                      maxLines: 1,
+
+                      overflow:
+                          TextOverflow.ellipsis,
+
+                      style:
+                          const TextStyle(
+                        color:
+                            dashboardBrown,
+
+                        fontSize: 12,
+
+                        fontWeight:
+                            FontWeight.w700,
+                      ),
+                    ),
+
+                    const SizedBox(height: 3),
+
+                    Text(
+                      activity.activity,
+
+                      maxLines: 1,
+
+                      overflow:
+                          TextOverflow.ellipsis,
+
+                      style:
+                          const TextStyle(
+                        color:
+                            dashboardMuted,
+
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              Text(
+                activity.score,
+
+                style:
+                    const TextStyle(
+                  color:
+                      dashboardBrown,
+
+                  fontSize: 13,
+
+                  fontWeight:
+                      FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+
+                decoration:
+                    BoxDecoration(
+                  color:
+                      dashboardLightBrown,
+
+                  borderRadius:
+                      BorderRadius.circular(
+                    7,
+                  ),
+                ),
+
+                child:
+                    Text(
+                  activity.learningArea,
+
+                  style:
+                      const TextStyle(
+                    color:
+                        dashboardAccent,
+
+                    fontSize: 9,
+
+                    fontWeight:
+                        FontWeight.w600,
+                  ),
+                ),
+              ),
+
+              const Spacer(),
+
+              const Icon(
+                Icons.access_time_rounded,
+
+                size: 13,
+
+                color:
+                    dashboardMuted,
+              ),
+
+              const SizedBox(width: 4),
+
+              Text(
+                activity.time,
+
+                style:
+                    const TextStyle(
+                  color:
+                      dashboardMuted,
+
+                  fontSize: 9,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// DRAWER BUTTON
+// ============================================================
+
+class _DrawerButton
+    extends StatelessWidget {
+  final IconData icon;
+
+  final String label;
+
+  final bool selected;
+
+  final VoidCallback onTap;
+
+  const _DrawerButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+
+    this.selected = false,
+  });
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) {
+    return Padding(
+      padding:
+          const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 4,
+      ),
+
+      child:
+          Material(
+        color:
+            selected
+                ? Colors.white
+                : Colors.transparent,
+
+        borderRadius:
+            BorderRadius.circular(
+          16,
+        ),
+
+        child:
+            InkWell(
+          onTap:
+              onTap,
+
+          borderRadius:
+              BorderRadius.circular(
+            16,
+          ),
+
+          child:
+              SizedBox(
+            height: 50,
+
+            child:
+                Row(
+              children: [
+                const SizedBox(width: 15),
+
+                Icon(
+                  icon,
+
+                  color:
+                      const Color(
+                    0xFF55341B,
+                  ),
+
+                  size: 20,
+                ),
+
+                const SizedBox(width: 14),
+
+                Expanded(
+                  child:
+                      Text(
+                    label,
+
+                    style:
+                        TextStyle(
+                      color:
+                          const Color(
+                        0xFF55341B,
+                      ),
+
+                      fontSize: 14,
+
+                      fontWeight:
+                          selected
+                              ? FontWeight.w700
+                              : FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// BOTTOM SHEET HANDLE
+// ============================================================
+
+Widget _sheetHandle() {
+  return Center(
+    child: Container(
+      width: 44,
+      height: 4,
+
+      decoration:
+          BoxDecoration(
+        color:
+            const Color(
+          0xFFD8CEC4,
+        ),
+
+        borderRadius:
+            BorderRadius.circular(
+          20,
+        ),
+      ),
+    ),
+  );
+}

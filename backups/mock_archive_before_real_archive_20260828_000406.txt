@@ -1,0 +1,132 @@
+import '../models/archived_student_summary.dart';
+import 'archive_service.dart';
+
+class MockArchiveService implements ArchiveService {
+  MockArchiveService._();
+
+  static final MockArchiveService instance = MockArchiveService._();
+
+  // =========================================================
+  // CURRENT SCHOOL YEAR
+  // =========================================================
+
+  String _currentSchoolYear = '2026-2027';
+
+  // =========================================================
+  // ARCHIVED STUDENT SUMMARIES
+  // =========================================================
+
+  final List<ArchivedStudentSummary> _archivedStudents = [];
+
+  // =========================================================
+  // GET CURRENT SCHOOL YEAR
+  // =========================================================
+
+  @override
+  Future<String> getCurrentSchoolYear() async {
+    return _currentSchoolYear;
+  }
+
+  // =========================================================
+  // SET CURRENT SCHOOL YEAR
+  // =========================================================
+
+  @override
+  Future<void> setCurrentSchoolYear(String schoolYear) async {
+    final String value = schoolYear.trim();
+
+    if (value.isEmpty) {
+      throw Exception('School year cannot be empty.');
+    }
+
+    _currentSchoolYear = value;
+  }
+
+  // =========================================================
+  // ARCHIVE SCHOOL YEAR
+  // =========================================================
+
+  @override
+  Future<void> archiveSchoolYear({
+    required String schoolYear,
+    required List<ArchivedStudentSummary> students,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    final String year = schoolYear.trim();
+
+    if (year.isEmpty) {
+      throw Exception('School year cannot be empty.');
+    }
+
+    final bool alreadyArchived = _archivedStudents.any(
+      (ArchivedStudentSummary student) => student.schoolYear == year,
+    );
+
+    if (alreadyArchived) {
+      throw Exception('School Year $year has already been archived.');
+    }
+
+    _archivedStudents.addAll(students);
+  }
+
+  // =========================================================
+  // GET ALL ARCHIVED STUDENTS
+  // =========================================================
+
+  @override
+  Future<List<ArchivedStudentSummary>> getArchivedStudents() async {
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    final List<ArchivedStudentSummary> results =
+        List<ArchivedStudentSummary>.from(_archivedStudents);
+
+    results.sort(
+      (ArchivedStudentSummary a, ArchivedStudentSummary b) =>
+          b.archivedAt.compareTo(a.archivedAt),
+    );
+
+    return List.unmodifiable(results);
+  }
+
+  // =========================================================
+  // GET ARCHIVED STUDENTS BY SCHOOL YEAR
+  // =========================================================
+
+  @override
+  Future<List<ArchivedStudentSummary>> getArchivedStudentsBySchoolYear(
+    String schoolYear,
+  ) async {
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    final List<ArchivedStudentSummary> results = _archivedStudents
+        .where(
+          (ArchivedStudentSummary student) => student.schoolYear == schoolYear,
+        )
+        .toList();
+
+    results.sort(
+      (ArchivedStudentSummary a, ArchivedStudentSummary b) =>
+          a.studentName.toLowerCase().compareTo(b.studentName.toLowerCase()),
+    );
+
+    return List.unmodifiable(results);
+  }
+
+  // =========================================================
+  // GET ARCHIVED SCHOOL YEARS
+  // =========================================================
+
+  @override
+  Future<List<String>> getArchivedSchoolYears() async {
+    final Set<String> years = _archivedStudents
+        .map((ArchivedStudentSummary student) => student.schoolYear)
+        .toSet();
+
+    final List<String> results = years.toList();
+
+    results.sort((String a, String b) => b.compareTo(a));
+
+    return results;
+  }
+}
