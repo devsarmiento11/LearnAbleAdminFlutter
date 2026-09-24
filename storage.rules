@@ -1,0 +1,34 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function ownsModules(ownerUid) {
+      let teacherId = request.auth.token.get('name', '');
+      return request.auth != null && request.auth.uid == ownerUid &&
+        teacherId is string && teacherId.size() > 0 &&
+        firestore.get(/databases/(default)/documents/users/$(teacherId)).data.role == 'teacher' &&
+        firestore.get(/databases/(default)/documents/users/$(teacherId)).data.authUid == ownerUid;
+    }
+    function studentCanDownload(ownerUid, moduleId, fileName) {
+      let id = request.auth.token.get('name', '');
+      let profile = firestore.get(/databases/(default)/documents/users/$(id)).data;
+      let module = firestore.get(/databases/(default)/documents/teacherLibraries/$(ownerUid)/modules/$(moduleId)).data;
+      let grade = profile.get('grade', '');
+      let numericGrade = grade is int ? grade : {
+        'Grade 1': 1, 'Grade 2': 2, 'Grade 3': 3, 'Grade 4': 4, 'Grade 5': 5, 'Grade 6': 6,
+        '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6
+      }.get(grade, 0);
+      return request.auth != null && profile.role == 'student' &&
+        profile.authUid == request.auth.uid && profile.status == 'Active' &&
+        module.Archived == false && module.Grade == numericGrade &&
+        module.StoragePath == 'teacherModules/' + ownerUid + '/' + moduleId + '/' + fileName;
+    }
+    match /teacherModules/{ownerUid}/{moduleId}/{fileName} {
+      allow read: if ownsModules(ownerUid) || studentCanDownload(ownerUid, moduleId, fileName);
+      allow create: if ownsModules(ownerUid) && fileName.matches('[a-f0-9]{32}[.]pdf') &&
+        request.resource.size > 0 && request.resource.size <= 25 * 1024 * 1024 &&
+        request.resource.contentType == 'application/pdf';
+      // Immutable versions protect concurrent readers and failed metadata commits.
+      allow update, delete: if false;
+    }
+  }
+}

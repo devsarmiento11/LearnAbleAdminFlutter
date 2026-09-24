@@ -11,6 +11,22 @@ class MockArchiveService implements ArchiveService {
   final List<ArchivedStudentSummary> _archivedStudents = [];
 
   final Set<String> _archivedSchoolYears = <String>{};
+  final Set<String> _unarchivedSchoolYears = <String>{};
+
+  @override
+  Future<List<String>> getUnarchivedSchoolYears() async =>
+      _unarchivedSchoolYears.toList()..sort();
+
+  @override
+  Future<void> unarchiveSchoolYear(String schoolYear) async {
+    final year = schoolYear.trim();
+    if (year.isEmpty) throw Exception('School year cannot be empty.');
+    if (!_archivedSchoolYears.remove(year)) {
+      throw Exception('School Year $year is no longer archived.');
+    }
+    _unarchivedSchoolYears.add(year);
+    if (_currentSchoolYear == year) _currentSchoolYear = '';
+  }
 
   @override
   Future<String> getCurrentSchoolYear() async {
@@ -45,9 +61,16 @@ class MockArchiveService implements ArchiveService {
       throw Exception('School Year $year has already been archived.');
     }
 
-    _archivedStudents.addAll(students);
+    for (final student in students) {
+      _archivedStudents.removeWhere(
+        (saved) =>
+            saved.schoolYear == year && saved.studentId == student.studentId,
+      );
+      _archivedStudents.add(student);
+    }
 
     _archivedSchoolYears.add(year);
+    _unarchivedSchoolYears.remove(year);
   }
 
   @override

@@ -1,8 +1,10 @@
+import '../widgets/report_navigation_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/student_model.dart';
 import '../models/teacher_model.dart';
+import '../models/parent_model.dart';
 import '../services/account_service.dart';
 import '../services/firebase_account_service.dart';
 import '../services/firebase_auth_service.dart';
@@ -38,6 +40,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   final GlobalKey<FormState> studentFormKey = GlobalKey<FormState>();
 
   final GlobalKey<FormState> teacherFormKey = GlobalKey<FormState>();
+  final GlobalKey<FormState> parentFormKey = GlobalKey<FormState>();
 
   // ============================================================
   // ACCOUNT TYPE
@@ -55,7 +58,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   final TextEditingController studentMiddleName = TextEditingController();
 
   final TextEditingController studentLastName = TextEditingController();
-  final TextEditingController studentUsername = TextEditingController();
 
   final TextEditingController studentBirthday = TextEditingController();
 
@@ -83,6 +85,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
 
   String? selectedGrade;
   String? selectedCondition;
+  String? selectedStudentGender;
   DateTime? selectedBirthday;
 
   bool showStudentPassword = false;
@@ -97,7 +100,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   final TextEditingController teacherMiddleName = TextEditingController();
 
   final TextEditingController teacherLastName = TextEditingController();
-  final TextEditingController teacherUsername = TextEditingController();
 
   final TextEditingController teacherEmail = TextEditingController();
 
@@ -116,14 +118,33 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   // INITIALIZE
   // ============================================================
 
+  final TextEditingController parentFirstName = TextEditingController();
+
+  final TextEditingController parentMiddleName = TextEditingController();
+
+  final TextEditingController parentLastName = TextEditingController();
+
+  final TextEditingController parentEmail = TextEditingController();
+
+  final TextEditingController parentId = TextEditingController();
+
+  final TextEditingController parentPassword = TextEditingController();
+
+  final TextEditingController parentConfirmPassword = TextEditingController();
+
+  String? selectedParentGender;
+
+  bool showParentPassword = false;
+  bool showParentConfirmPassword = false;
+
+  final TextEditingController childrenId = TextEditingController();
+
   @override
   void initState() {
     super.initState();
 
     accountService = widget.accountService ?? FirebaseAccountService.instance;
 
-    _generateStudentId();
-    _generateTeacherId();
   }
 
   // ============================================================
@@ -135,7 +156,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     studentFirstName.dispose();
     studentMiddleName.dispose();
     studentLastName.dispose();
-    studentUsername.dispose();
     studentBirthday.dispose();
     studentAge.dispose();
     studentAddress.dispose();
@@ -156,13 +176,20 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     teacherFirstName.dispose();
     teacherMiddleName.dispose();
     teacherLastName.dispose();
-    teacherUsername.dispose();
     teacherEmail.dispose();
 
     teacherId.dispose();
     teacherPassword.dispose();
     teacherConfirmPassword.dispose();
 
+    parentFirstName.dispose();
+    parentMiddleName.dispose();
+    parentLastName.dispose();
+    parentEmail.dispose();
+    parentId.dispose();
+    parentPassword.dispose();
+    parentConfirmPassword.dispose();
+    childrenId.dispose();
     super.dispose();
   }
 
@@ -175,34 +202,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
       if (!mounted) return;
 
       SystemChannels.textInput.invokeMethod('TextInput.show');
-    });
-  }
-
-  // ============================================================
-  // GENERATE STUDENT ID
-  // ============================================================
-
-  Future<void> _generateStudentId() async {
-    final String id = await accountService.generateStudentId();
-
-    if (!mounted) return;
-
-    setState(() {
-      studentId.text = id;
-    });
-  }
-
-  // ============================================================
-  // GENERATE TEACHER ID
-  // ============================================================
-
-  Future<void> _generateTeacherId() async {
-    final String id = await accountService.generateTeacherId();
-
-    if (!mounted) return;
-
-    setState(() {
-      teacherId.text = id;
     });
   }
 
@@ -272,6 +271,16 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     return null;
   }
 
+  String? _accountIdValidator(String? value, String prefix) {
+    final requiredError = _requiredValidator(value);
+    if (requiredError != null) return requiredError;
+    final id = value!.trim();
+    if (!RegExp('^' + prefix + r'[0-9]{4}$').hasMatch(id) || id == prefix + '0000') {
+      return 'Enter $prefix followed by 4 digits (e.g. ${prefix}1234).';
+    }
+    return null;
+  }
+
   String? _emailValidator(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Email is required.';
@@ -283,15 +292,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
       return 'Enter a valid email address.';
     }
 
-    return null;
-  }
-
-  String? _usernameValidator(String? value) {
-    final username = value?.trim() ?? '';
-    if (username.isEmpty) return 'Username is required.';
-    if (!RegExp(r'^[a-zA-Z0-9_.-]{3,30}$').hasMatch(username)) {
-      return 'Use 3–30 letters, numbers, dots, dashes, or underscores.';
-    }
     return null;
   }
 
@@ -338,7 +338,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     try {
       final StudentModel student = StudentModel(
         id: studentId.text.trim(),
-        username: studentUsername.text.trim(),
+        username: studentId.text.trim(),
 
         firstName: studentFirstName.text.trim(),
 
@@ -353,6 +353,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
         birthday: selectedBirthday!,
 
         age: _calculateAge(selectedBirthday!),
+
+        gender: selectedStudentGender ?? '',
 
         address: studentAddress.text.trim(),
 
@@ -405,6 +407,91 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   // CREATE TEACHER
   // ============================================================
 
+  Future<void> _createParent() async {
+    if (isSubmitting) return;
+    FocusScope.of(context).unfocus();
+
+    if (!(parentFormKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
+    if (parentPassword.text != parentConfirmPassword.text) {
+      _showError('Passwords do not match.');
+      return;
+    }
+
+    if (parentPassword.text.length < 6) {
+      _showError('Password must contain at least 6 characters.');
+      return;
+    }
+
+    setState(() {
+      isSubmitting = true;
+    });
+
+    try {
+      final child = childrenId.text.trim().toUpperCase();
+      final students = await accountService.getStudents();
+      if (!students.any((student) => student.id == child)) {
+        throw Exception('Children ID must belong to an existing student.');
+      }
+      final ParentModel parent = ParentModel(
+        childrenId: child,
+        id: parentId.text.trim(),
+        username: parentId.text.trim(),
+
+        firstName: parentFirstName.text.trim(),
+
+        middleName: parentMiddleName.text.trim(),
+
+        lastName: parentLastName.text.trim(),
+
+        email: parentEmail.text.trim(),
+
+        gender: selectedParentGender ?? '',
+
+        status: 'Active',
+
+        createdAt: DateTime.now(),
+      );
+
+      await accountService.createParent(
+        parent: parent,
+        password: parentPassword.text,
+      );
+
+      if (!mounted) return;
+
+      await _showSuccessDialog(
+        title: 'Account Created',
+        message: 'Parent account ${parent.id} has been created successfully.',
+      );
+
+      if (!mounted) return;
+
+      parentFirstName.clear();
+      parentMiddleName.clear();
+      parentLastName.clear();
+      parentEmail.clear();
+      parentPassword.clear();
+      parentConfirmPassword.clear();
+      childrenId.clear();
+      setState(() => selectedParentGender = null);
+      parentFormKey.currentState?.reset();
+      parentId.clear();
+    } catch (error) {
+      if (!mounted) return;
+
+      _showError(_cleanError(error));
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSubmitting = false;
+        });
+      }
+    }
+  }
+
   Future<void> _createTeacher() async {
     FocusScope.of(context).unfocus();
 
@@ -429,7 +516,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     try {
       final TeacherModel teacher = TeacherModel(
         id: teacherId.text.trim(),
-        username: teacherUsername.text.trim(),
+        username: teacherId.text.trim(),
 
         firstName: teacherFirstName.text.trim(),
 
@@ -579,8 +666,10 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
 
               const SizedBox(height: 10),
 
-              const Text(
-                'You can now view and manage this account from Registered Accounts.',
+              Text(
+                accountType == 'parent'
+                    ? 'The Children ID has been saved for the parent–student connection.'
+                    : 'You can now view and manage this account from Registered Accounts.',
 
                 textAlign: TextAlign.center,
 
@@ -726,7 +815,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                     const SizedBox(height: 5),
 
                     const Text(
-                      'Create a new student or teacher account.',
+                      'Create a new student, teacher or parents account.',
 
                       style: TextStyle(color: appMuted, fontSize: 13),
                     ),
@@ -742,6 +831,11 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
 
                       child: accountType == 'student'
                           ? _buildStudentForm()
+                          : accountType == 'parent'
+                          ? AbsorbPointer(
+                              absorbing: isSubmitting,
+                              child: _buildParentForm(),
+                            )
                           : _buildTeacherForm(),
                     ),
                   ],
@@ -815,6 +909,19 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
               });
             },
           ),
+          const SizedBox(height: 10),
+          _AccountOption(
+            selected: accountType == 'parent',
+            icon: Icons.family_restroom_rounded,
+            assetIcon: 'assets/images/parents_icon.png',
+            title: 'Parents Account',
+            subtitle: 'Create a separate account for a parent.',
+            onTap: () {
+              if (isSubmitting) return;
+              FocusScope.of(context).unfocus();
+              setState(() => accountType = 'parent');
+            },
+          ),
         ],
       ),
     );
@@ -876,14 +983,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                   hint: 'Enter Last Name',
 
                   validator: _requiredValidator,
-                ),
-
-                _buildTextField(
-                  label: 'Game Username',
-                  required: true,
-                  controller: studentUsername,
-                  hint: 'Used with the Student ID to log in to the game',
-                  validator: _usernameValidator,
                 ),
 
                 _buildDropdown(
@@ -959,6 +1058,22 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                   hint: 'Age',
 
                   readOnly: true,
+                ),
+
+                _buildDropdown(
+                  label: 'Gender',
+
+                  value: selectedStudentGender,
+
+                  hint: 'Select Gender',
+
+                  items: const ['Male', 'Female'],
+
+                  onChanged: (String? value) {
+                    setState(() {
+                      selectedStudentGender = value;
+                    });
+                  },
                 ),
 
                 _buildTextField(
@@ -1096,20 +1211,10 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                   required: true,
 
                   controller: studentId,
-
-                  hint: 'Student ID',
-
-                  readOnly: true,
-
-                  validator: _requiredValidator,
-
-                  suffixIcon: IconButton(
-                    tooltip: 'Generate ID',
-
-                    onPressed: isSubmitting ? null : _generateStudentId,
-
-                    icon: const Icon(Icons.refresh_rounded, color: appAccent),
-                  ),
+                  hint: 'Enter Student ID (e.g. S1234)',
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  validator: (value) => _accountIdValidator(value, 'S'),
                 ),
 
                 _buildTextField(
@@ -1240,6 +1345,261 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   // TEACHER FORM
   // ============================================================
 
+  Widget _buildParentForm() {
+    return Form(
+      key: parentFormKey,
+
+      child: Column(
+        key: const ValueKey('parentForm'),
+
+        children: [
+          _FormCard(
+            child: Column(
+              children: [
+                const _SectionTitle(
+                  icon: Icons.person_outline,
+
+                  title: 'Personal Information',
+
+                  subtitle: "Enter the parent's personal information.",
+                ),
+
+                const SizedBox(height: 22),
+
+                _buildTextField(
+                  label: 'First Name',
+
+                  required: true,
+
+                  controller: parentFirstName,
+
+                  hint: 'Enter First Name',
+
+                  validator: _requiredValidator,
+                ),
+
+                _buildTextField(
+                  label: 'Middle Name',
+
+                  controller: parentMiddleName,
+
+                  hint: 'Enter Middle Name',
+                ),
+
+                _buildTextField(
+                  label: 'Last Name',
+
+                  required: true,
+
+                  controller: parentLastName,
+
+                  hint: 'Enter Last Name',
+
+                  validator: _requiredValidator,
+                ),
+
+                _buildTextField(
+                  label: 'Email',
+
+                  required: true,
+
+                  controller: parentEmail,
+
+                  hint: 'Enter Email Address',
+
+                  validator: _emailValidator,
+
+                  keyboardType: TextInputType.emailAddress,
+                ),
+
+                _buildDropdown(
+                  label: 'Gender',
+
+                  value: selectedParentGender,
+
+                  hint: 'Select Gender',
+
+                  items: const ['Male', 'Female'],
+
+                  onChanged: (String? value) {
+                    setState(() {
+                      selectedParentGender = value;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          _FormCard(
+            child: Column(
+              children: [
+                const _SectionTitle(
+                  icon: Icons.lock_outline_rounded,
+
+                  title: 'Account Information',
+
+                  subtitle: "Create the parent's login credentials.",
+                ),
+
+                const SizedBox(height: 22),
+
+                _buildTextField(
+                  label: 'Parents ID',
+
+                  required: true,
+
+                  controller: parentId,
+                  hint: 'Enter Parents ID (e.g. P1234)',
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  validator: (value) => _accountIdValidator(value, 'P'),
+                ),
+
+                _buildTextField(
+                  label: 'Children ID',
+                  required: true,
+                  controller: childrenId,
+                  hint: 'Enter existing Student ID (e.g. S2144)',
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Children ID is required.';
+                    }
+                    if (!RegExp(
+                      r'^S[0-9]{4}$',
+                    ).hasMatch(value.trim().toUpperCase())) {
+                      return 'Enter a valid Student ID (e.g. S2144).';
+                    }
+                    return null;
+                  },
+                ),
+                _buildTextField(
+                  label: 'Password',
+
+                  required: true,
+
+                  controller: parentPassword,
+
+                  hint: 'Enter password',
+
+                  obscureText: !showParentPassword,
+
+                  keyboardType: TextInputType.visiblePassword,
+
+                  autocorrect: false,
+
+                  enableSuggestions: false,
+
+                  validator: (String? value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Password is required.';
+                    }
+
+                    if (value.length < 6) {
+                      return 'Password must contain at least 6 characters.';
+                    }
+
+                    return null;
+                  },
+
+                  suffixIcon: IconButton(
+                    onPressed: () {
+                      setState(() {
+                        showParentPassword = !showParentPassword;
+                      });
+
+                      _showKeyboard();
+                    },
+
+                    icon: Icon(
+                      showParentPassword
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+
+                      color: appMuted,
+
+                      size: 20,
+                    ),
+                  ),
+                ),
+
+                _buildTextField(
+                  label: 'Confirm Password',
+
+                  required: true,
+
+                  controller: parentConfirmPassword,
+
+                  hint: 'Confirm password',
+
+                  obscureText: !showParentConfirmPassword,
+
+                  keyboardType: TextInputType.visiblePassword,
+
+                  textInputAction: TextInputAction.done,
+
+                  autocorrect: false,
+
+                  enableSuggestions: false,
+
+                  onSubmitted: (_) {
+                    _createParent();
+                  },
+
+                  validator: (String? value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please confirm the password.';
+                    }
+
+                    if (value != parentPassword.text) {
+                      return 'Passwords do not match.';
+                    }
+
+                    return null;
+                  },
+
+                  suffixIcon: IconButton(
+                    onPressed: () {
+                      setState(() {
+                        showParentConfirmPassword = !showParentConfirmPassword;
+                      });
+
+                      _showKeyboard();
+                    },
+
+                    icon: Icon(
+                      showParentConfirmPassword
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+
+                      color: appMuted,
+
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          _buildSubmitButton(
+            icon: Icons.person_add_alt_1_rounded,
+
+            label: 'Create Parents Account',
+
+            onPressed: _createParent,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTeacherForm() {
     return Form(
       key: teacherFormKey,
@@ -1291,14 +1651,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                   hint: 'Enter Last Name',
 
                   validator: _requiredValidator,
-                ),
-
-                _buildTextField(
-                  label: 'Game Username',
-                  required: true,
-                  controller: teacherUsername,
-                  hint: 'Used with the Teacher ID to log in to the game',
-                  validator: _usernameValidator,
                 ),
 
                 _buildTextField(
@@ -1355,20 +1707,10 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                   required: true,
 
                   controller: teacherId,
-
-                  hint: 'Teacher ID',
-
-                  readOnly: true,
-
-                  validator: _requiredValidator,
-
-                  suffixIcon: IconButton(
-                    tooltip: 'Generate ID',
-
-                    onPressed: isSubmitting ? null : _generateTeacherId,
-
-                    icon: const Icon(Icons.refresh_rounded, color: appAccent),
-                  ),
+                  hint: 'Enter Teacher ID (e.g. T1234)',
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  validator: (value) => _accountIdValidator(value, 'T'),
                 ),
 
                 _buildTextField(
@@ -1917,6 +2259,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
               },
             ),
 
+            const ReportNavigationItem(),
+
             const Spacer(),
 
             const Text(
@@ -1991,9 +2335,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
 
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(
-                    builder: (_) => const LoginScreen(
-                      authService: FirebaseAdminAuthService(),
-                    ),
+                    builder: (_) =>
+                        LoginScreen(authService: FirebaseAdminAuthService()),
                   ),
                   (Route<dynamic> route) => false,
                 );
@@ -2137,6 +2480,7 @@ class _SectionTitle extends StatelessWidget {
 class _AccountOption extends StatelessWidget {
   final bool selected;
   final IconData icon;
+  final String? assetIcon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
@@ -2144,6 +2488,7 @@ class _AccountOption extends StatelessWidget {
   const _AccountOption({
     required this.selected,
     required this.icon,
+    this.assetIcon,
     required this.title,
     required this.subtitle,
     required this.onTap,
@@ -2223,7 +2568,16 @@ class _AccountOption extends StatelessWidget {
                   borderRadius: BorderRadius.circular(11),
                 ),
 
-                child: Icon(icon, color: appAccent, size: 20),
+                child: assetIcon == null
+                    ? Icon(icon, color: appAccent, size: 20)
+                    : Padding(
+                        padding: const EdgeInsets.all(7),
+                        child: Image.asset(
+                          assetIcon!,
+                          color: appAccent,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
               ),
 
               const SizedBox(width: 12),

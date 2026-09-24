@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/archived_student_summary.dart';
 import '../services/archive_service.dart';
+import '../services/promotion_service.dart';
 
 const Color archiveBackground = Color(0xFFF8F5F0);
 const Color archiveBrown = Color(0xFF4D2F18);
@@ -12,8 +13,15 @@ const Color archiveLightBrown = Color(0xFFF7F1E9);
 
 class ArchivedStudentsSection extends StatefulWidget {
   final ArchiveService archiveService;
+  final PromotionService? promotionService;
+  final VoidCallback? onPromoted;
 
-  const ArchivedStudentsSection({super.key, required this.archiveService});
+  const ArchivedStudentsSection({
+    super.key,
+    required this.archiveService,
+    this.promotionService,
+    this.onPromoted,
+  });
 
   @override
   State<ArchivedStudentsSection> createState() =>
@@ -29,6 +37,17 @@ class _ArchivedStudentsSectionState extends State<ArchivedStudentsSection> {
   String? selectedSchoolYear;
 
   bool loading = true;
+  bool unarchiving = false;
+  bool selecting = false;
+  bool loadingPromotion = false;
+  bool promoting = false;
+  bool reviewing = false;
+  int promotionRequest = 0;
+  final selectedIds = <String>{};
+  PromotionState promotionState = const PromotionState();
+  String? promotionError;
+
+  bool get promotionBusy => loadingPromotion || reviewing || promoting;
 
   @override
   void initState() {
@@ -84,6 +103,7 @@ class _ArchivedStudentsSectionState extends State<ArchivedStudentsSection> {
 
         loading = false;
       });
+      await _loadPromotion();
     } catch (error) {
       if (!mounted) return;
 
@@ -99,6 +119,373 @@ class _ArchivedStudentsSectionState extends State<ArchivedStudentsSection> {
           ),
         );
     }
+  }
+
+  Future<bool> _loadPromotion() async {
+    final service = widget.promotionService;
+    final year = selectedSchoolYear;
+    if (service == null || year == null) return false;
+    final request = ++promotionRequest;
+    setState(() {
+      loadingPromotion = true;
+      promotionError = null;
+    });
+    try {
+      final result = await service.load(year);
+      if (!mounted || request != promotionRequest) return false;
+      setState(() {
+        promotionState = result;
+        selectedIds.removeWhere(
+          (id) => result.candidates[id]?.eligible != true,
+        );
+      });
+      return true;
+    } catch (error) {
+      if (mounted && request == promotionRequest) {
+        setState(
+          () => promotionError =
+              'Unable to load promotion details. Please retry.',
+        );
+      }
+      return false;
+    } finally {
+      if (mounted && request == promotionRequest) {
+        setState(() => loadingPromotion = false);
+      }
+    }
+  }
+
+  void _toggleStudent(String id) {
+    if (promotionBusy ||
+        promotionError != null ||
+        promotionState.candidates[id]?.eligible != true) {
+      return;
+    }
+    setState(() {
+      if (!selectedIds.add(id)) selectedIds.remove(id);
+    });
+  }
+
+  void _promotionMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _promoteSelected() async {
+    if (promotionBusy || selectedIds.isEmpty || selectedIds.length > 200) {
+      return;
+    }
+    final originalIds = Set<String>.of(selectedIds);
+    setState(() => reviewing = true);
+    try {
+      if (!await _loadPromotion() || !mounted) return;
+      if (selectedIds.length != originalIds.length ||
+          promotionState.activeYear == null ||
+          promotionState.issue.isNotEmpty) {
+        _promotionMessage(
+          'Promotion details changed. Review the available students and school year.',
+        );
+        return;
+      }
+      final year = promotionState.activeYear!;
+      final sourceYear = selectedSchoolYear!;
+      final candidates = selectedIds
+          .map((id) => promotionState.candidates[id]!)
+          .toList();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: Text(
+            'Promote ${candidates.length} student${candidates.length == 1 ? '' : 's'}?',
+            style: const TextStyle(
+              color: archiveBrown,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Enroll in $year and advance each student by one grade.',
+                    style: const TextStyle(color: archiveBrown),
+                  ),
+                  const SizedBox(height: 14),
+                  for (final candidate in candidates)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            archivedStudents
+                                .firstWhere(
+                                  (student) =>
+                                      student.studentId == candidate.id,
+                                )
+                                .studentName,
+                            style: const TextStyle(
+                              color: archiveBrown,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            '${candidate.grade} → ${candidate.nextGrade}',
+                            style: const TextStyle(color: archiveAccent),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Text(
+                    'Archived summaries stay in $sourceYear. Students already enrolled in $year cannot be promoted again.',
+                    style: const TextStyle(color: archiveMuted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              style: TextButton.styleFrom(foregroundColor: archiveAccent),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: _unarchiveButtonStyle(),
+              child: const Text('Confirm Promotion'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      setState(() => promoting = true);
+      try {
+        await widget.promotionService!.promote(
+          sourceYear: sourceYear,
+          targetYear: year,
+          students: candidates,
+        );
+        if (!mounted) return;
+        setState(() {
+          final updated = Map<String, PromotionCandidate>.of(
+            promotionState.candidates,
+          );
+          for (final candidate in candidates) {
+            updated[candidate.id] = PromotionCandidate(
+              id: candidate.id,
+              grade: candidate.nextGrade!,
+              nextGrade: null,
+              enrolled: true,
+              reason: 'Already enrolled in $year',
+            );
+          }
+          promotionState = PromotionState(
+            activeYear: year,
+            candidates: updated,
+          );
+          selectedIds.clear();
+          selecting = false;
+        });
+        _promotionMessage(
+          '${candidates.length} student${candidates.length == 1 ? '' : 's'} enrolled in $year. Each grade advanced by one.',
+        );
+        widget.onPromoted?.call();
+      } catch (error) {
+        if (!mounted) return;
+        _promotionMessage(
+          'Promotion could not be confirmed. ${error.toString().replaceFirst('Exception: ', '')}',
+        );
+        await _loadPromotion();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          reviewing = false;
+          promoting = false;
+        });
+      }
+    }
+  }
+
+  Widget _promotionControls() {
+    final available = filteredStudents
+        .where(
+          (student) =>
+              promotionState.candidates[student.studentId]?.eligible == true,
+        )
+        .toList();
+    final selectedVisible = available
+        .where((student) => selectedIds.contains(student.studentId))
+        .length;
+    final ready =
+        !promotionBusy &&
+        promotionError == null &&
+        promotionState.activeYear != null &&
+        promotionState.issue.isEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: archiveLightBrown,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final title = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Promote to active school year',
+                    style: TextStyle(color: archiveMuted, fontSize: 11),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    loadingPromotion
+                        ? 'Loading...'
+                        : promotionState.activeYear ?? 'Not Selected',
+                    style: const TextStyle(
+                      color: archiveBrown,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              );
+              final button = OutlinedButton.icon(
+                onPressed:
+                    !promotionBusy &&
+                        (selecting || (ready && available.isNotEmpty))
+                    ? () => setState(() {
+                        selecting = !selecting;
+                        selectedIds.clear();
+                      })
+                    : null,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: archiveAccent,
+                  side: const BorderSide(color: archiveAccent),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                ),
+                icon: Icon(
+                  selecting ? Icons.close_rounded : Icons.checklist_rounded,
+                  size: 18,
+                ),
+                label: Text(
+                  selecting ? 'Cancel Selection' : 'Select Accounts',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              );
+              if (constraints.maxWidth < 400) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [title, const SizedBox(height: 8), button],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: title),
+                  const SizedBox(width: 8),
+                  button,
+                ],
+              );
+            },
+          ),
+        ),
+        if (promotionError != null || promotionState.issue.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            promotionError ?? promotionState.issue,
+            style: const TextStyle(color: archiveAccent, fontSize: 12),
+          ),
+          TextButton(
+            onPressed: promotionBusy ? null : _loadPromotion,
+            child: const Text('Retry'),
+          ),
+        ],
+        if (selecting)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      tristate: true,
+                      activeColor: archiveAccent,
+                      value: selectedVisible == 0
+                          ? false
+                          : selectedVisible == available.length
+                          ? true
+                          : null,
+                      onChanged: !ready || available.isEmpty
+                          ? null
+                          : (_) => setState(() {
+                              if (selectedVisible == available.length) {
+                                selectedIds.removeAll(
+                                  available.map((student) => student.studentId),
+                                );
+                              } else {
+                                selectedIds.addAll(
+                                  available.map((student) => student.studentId),
+                                );
+                              }
+                            }),
+                    ),
+                    const Text(
+                      'Select all shown',
+                      style: TextStyle(color: archiveBrown, fontSize: 12),
+                    ),
+                  ],
+                ),
+                Text(
+                  '${selectedIds.length} selected',
+                  style: const TextStyle(color: archiveMuted, fontSize: 12),
+                ),
+                ElevatedButton.icon(
+                  onPressed:
+                      ready &&
+                          selectedIds.isNotEmpty &&
+                          selectedIds.length <= 200
+                      ? _promoteSelected
+                      : null,
+                  style: _unarchiveButtonStyle(),
+                  icon: const Icon(Icons.school_rounded, size: 18),
+                  label: Text(
+                    promoting
+                        ? 'Promoting...'
+                        : reviewing
+                        ? 'Preparing...'
+                        : 'Promote (${selectedIds.length})',
+                  ),
+                ),
+                if (selectedIds.length > 200)
+                  const Text(
+                    'Select up to 200 students per promotion.',
+                    style: TextStyle(color: archiveAccent, fontSize: 12),
+                  ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 10),
+      ],
+    );
   }
 
   List<ArchivedStudentSummary> get filteredStudents {
@@ -120,6 +507,150 @@ class _ArchivedStudentsSectionState extends State<ArchivedStudentsSection> {
           student.condition.toLowerCase().contains(search) ||
           student.completionStatus.toLowerCase().contains(search);
     }).toList();
+  }
+
+  Future<void> _unarchiveSelectedYear() async {
+    final year = selectedSchoolYear;
+    if (year == null || unarchiving || selecting || promotionBusy) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: Text(
+          'Unarchive School Year $year?',
+          style: const TextStyle(
+            color: archiveBrown,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: const Text(
+          'This year will appear again in the Dashboard’s school year list. '
+          'Choose it and press Set School Year to make it current.',
+          style: TextStyle(color: archiveMuted, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            style: TextButton.styleFrom(foregroundColor: archiveAccent),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: _unarchiveButtonStyle(),
+            child: const Text('Unarchive Year'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || unarchiving) return;
+
+    setState(() => unarchiving = true);
+    try {
+      await widget.archiveService.unarchiveSchoolYear(year);
+      if (!mounted) return;
+      setState(() {
+        schoolYears.remove(year);
+        selectedSchoolYear = schoolYears.isEmpty ? null : schoolYears.first;
+      });
+      searchController.clear();
+      await _loadPromotion();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              'School Year $year unarchived. It is now available in the Dashboard.',
+            ),
+          ),
+        );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+          ),
+        );
+    } finally {
+      if (mounted) setState(() => unarchiving = false);
+    }
+  }
+
+  ButtonStyle _unarchiveButtonStyle() => ElevatedButton.styleFrom(
+    backgroundColor: const Color(0xFFA56B2F),
+    foregroundColor: Colors.white,
+    elevation: 0,
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
+  );
+
+  Widget _schoolYearControls() {
+    final dropdown = DropdownButtonFormField<String>(
+      key: ValueKey(selectedSchoolYear),
+      initialValue: selectedSchoolYear,
+      isExpanded: true,
+      decoration: _inputDecoration(),
+      items: schoolYears
+          .map(
+            (year) => DropdownMenuItem<String>(value: year, child: Text(year)),
+          )
+          .toList(),
+      onChanged: unarchiving || promotionBusy
+          ? null
+          : (value) {
+              if (value != null) {
+                setState(() {
+                  selectedSchoolYear = value;
+                  selectedIds.clear();
+                  selecting = false;
+                  promotionState = const PromotionState();
+                });
+                _loadPromotion();
+              }
+            },
+    );
+    final button = ElevatedButton.icon(
+      onPressed: unarchiving || selecting || promotionBusy
+          ? null
+          : _unarchiveSelectedYear,
+      style: _unarchiveButtonStyle(),
+      icon: unarchiving
+          ? const SizedBox(
+              width: 17,
+              height: 17,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: archiveAccent,
+              ),
+            )
+          : const Icon(Icons.unarchive_rounded, size: 18),
+      label: Text(
+        unarchiving ? 'Unarchiving...' : 'Unarchive Year',
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 430) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [dropdown, const SizedBox(height: 10), button],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: dropdown),
+            const SizedBox(width: 10),
+            button,
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -178,22 +709,7 @@ class _ArchivedStudentsSectionState extends State<ArchivedStudentsSection> {
 
             const SizedBox(height: 7),
 
-            DropdownButtonFormField<String>(
-              key: ValueKey(selectedSchoolYear),
-              initialValue: selectedSchoolYear,
-              isExpanded: true,
-              decoration: _inputDecoration(),
-              items: schoolYears.map((String year) {
-                return DropdownMenuItem<String>(value: year, child: Text(year));
-              }).toList(),
-              onChanged: (String? value) {
-                if (value == null) return;
-
-                setState(() {
-                  selectedSchoolYear = value;
-                });
-              },
-            ),
+            _schoolYearControls(),
 
             const SizedBox(height: 13),
 
@@ -218,13 +734,14 @@ class _ArchivedStudentsSectionState extends State<ArchivedStudentsSection> {
             ),
 
             const SizedBox(height: 18),
+            if (widget.promotionService != null) _promotionControls(),
           ],
 
           if (schoolYears.isEmpty)
             _emptyState(
               icon: Icons.archive_outlined,
               title: 'No archived school years',
-              message: 'Archive a school year from the Dashboard first.',
+              message: 'Unarchived years are available on the Dashboard.',
             )
           else if (filteredStudents.isEmpty)
             _emptyState(
@@ -242,16 +759,22 @@ class _ArchivedStudentsSectionState extends State<ArchivedStudentsSection> {
   }
 
   Widget _studentCard(ArchivedStudentSummary student) {
+    final candidate = promotionState.candidates[student.studentId];
+    final selected = selectedIds.contains(student.studentId);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFFCFAF7),
+        color: selected ? const Color(0xFFFBF4EB) : const Color(0xFFFCFAF7),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: archiveBorder),
+        border: Border.all(color: selected ? archiveAccent : archiveBorder),
       ),
       child: InkWell(
         onTap: () {
-          _showStudentSummary(student);
+          if (selecting) {
+            _toggleStudent(student.studentId);
+          } else {
+            _showStudentSummary(student);
+          }
         },
         borderRadius: BorderRadius.circular(15),
         child: Padding(
@@ -261,18 +784,31 @@ class _ArchivedStudentsSectionState extends State<ArchivedStudentsSection> {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 43,
-                    height: 43,
-                    decoration: BoxDecoration(
-                      color: archiveLightBrown,
-                      borderRadius: BorderRadius.circular(12),
+                  if (selecting)
+                    Checkbox(
+                      value: selected,
+                      activeColor: archiveAccent,
+                      semanticLabel: 'Select ${student.studentName}',
+                      onChanged:
+                          promotionBusy ||
+                              promotionError != null ||
+                              candidate?.eligible != true
+                          ? null
+                          : (_) => _toggleStudent(student.studentId),
+                    )
+                  else
+                    Container(
+                      width: 43,
+                      height: 43,
+                      decoration: BoxDecoration(
+                        color: archiveLightBrown,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.archive_rounded,
+                        color: archiveAccent,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.archive_rounded,
-                      color: archiveAccent,
-                    ),
-                  ),
 
                   const SizedBox(width: 11),
 
@@ -302,7 +838,14 @@ class _ArchivedStudentsSectionState extends State<ArchivedStudentsSection> {
                     ),
                   ),
 
-                  const Icon(Icons.chevron_right_rounded, color: archiveMuted),
+                  IconButton(
+                    onPressed: () => _showStudentSummary(student),
+                    tooltip: 'View ${student.studentName} summary',
+                    icon: const Icon(
+                      Icons.chevron_right_rounded,
+                      color: archiveMuted,
+                    ),
+                  ),
                 ],
               ),
 
@@ -337,6 +880,22 @@ class _ArchivedStudentsSectionState extends State<ArchivedStudentsSection> {
                   ),
                 ],
               ),
+              if (candidate?.enrolled == true) ...[
+                const Divider(color: archiveBorder),
+                Text(
+                  '✓ Enrolled in ${promotionState.activeYear} · ${candidate!.grade}',
+                  style: const TextStyle(
+                    color: Color(0xFF527044),
+                    fontSize: 12,
+                  ),
+                ),
+              ] else if (candidate != null && candidate.reason.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  candidate.reason,
+                  style: const TextStyle(color: archiveMuted, fontSize: 12),
+                ),
+              ],
             ],
           ),
         ),

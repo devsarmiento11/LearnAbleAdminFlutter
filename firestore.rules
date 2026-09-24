@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn() &&
+        (request.auth.token.admin == true ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    function isScoreTeacher() {
+      // Managed accounts use the school ID as their Auth display name.
+      // The name is only a lookup key: the stored UID and role grant access.
+      let teacherId = request.auth.token.get('name', '');
+      return signedIn() && teacherId is string && teacherId.size() > 0 &&
+        get(/databases/$(database)/documents/users/$(teacherId)).data.role == 'teacher' &&
+        get(/databases/$(database)/documents/users/$(teacherId)).data.authUid == request.auth.uid;
+    }
+    function isOwnActivity() {
+      let studentId = resource.data.userId;
+      return signedIn() && studentId is string &&
+        get(/databases/$(database)/documents/users/$(studentId)).data.role == 'student' &&
+        get(/databases/$(database)/documents/users/$(studentId)).data.authUid == request.auth.uid;
+    }
+
+    function isLinkedParent(studentId) {
+      let parentId = signedIn() ? request.auth.token.get('name', '') : '';
+      return signedIn() && parentId is string && parentId.size() > 0 &&
+        get(/databases/$(database)/documents/users/$(parentId)).data.role == 'parent' &&
+        get(/databases/$(database)/documents/users/$(parentId)).data.authUid == request.auth.uid &&
+        get(/databases/$(database)/documents/users/$(parentId)).data.status == 'Active' &&
+        get(/databases/$(database)/documents/users/$(parentId)).data.childrenId == studentId;
+    }
+
+    function canSaveOwnActivity() {
+      let studentId = request.resource.data.userId;
+      return signedIn() && studentId is string &&
+        get(/databases/$(database)/documents/users/$(studentId)).data.role == 'student' &&
+        get(/databases/$(database)/documents/users/$(studentId)).data.authUid == request.auth.uid;
+    }
+
+    function isGradeTeacher() {
+      let teacherId = request.resource.data.gradesUpdatedBy;
+      return signedIn() && teacherId is string &&
+        get(/databases/$(database)/documents/users/$(teacherId)).data.role == 'teacher' &&
+        get(/databases/$(database)/documents/users/$(teacherId)).data.authUid == request.auth.uid;
+    }
+
+    function validGrade(grades, key) {
+      return !(key in grades) ||
+        (grades[key] is int && grades[key] >= 0 && grades[key] <= 100);
+    }
+
+    function validAcademicGrades() {
+      let grades = request.resource.data.academicGrades;
+      return grades is map && grades.keys().hasOnly([
+          'ENGLISH_1ST', 'ENGLISH_2ND', 'ENGLISH_3RD', 'ENGLISH_4TH',
+          'MATH_1ST', 'MATH_2ND', 'MATH_3RD', 'MATH_4TH',
+          'SCIENCE_1ST', 'SCIENCE_2ND', 'SCIENCE_3RD', 'SCIENCE_4TH']) &&
+        validGrade(grades, 'ENGLISH_1ST') && validGrade(grades, 'ENGLISH_2ND') &&
+        validGrade(grades, 'ENGLISH_3RD') && validGrade(grades, 'ENGLISH_4TH') &&
+        validGrade(grades, 'MATH_1ST') && validGrade(grades, 'MATH_2ND') &&
+        validGrade(grades, 'MATH_3RD') && validGrade(grades, 'MATH_4TH') &&
+        validGrade(grades, 'SCIENCE_1ST') && validGrade(grades, 'SCIENCE_2ND') &&
+        validGrade(grades, 'SCIENCE_3RD') && validGrade(grades, 'SCIENCE_4TH');
+    }
+
+    function moduleStudent() {
+      let id = request.auth.token.get('name', '');
+      let profile = get(/databases/$(database)/documents/users/$(id)).data;
+      return signedIn() && profile.role == 'student' &&
+        profile.authUid == request.auth.uid && profile.status == 'Active';
+    }
+    function moduleStudentGrade() {
+      let id = request.auth.token.get('name', '');
+      let grade = get(/databases/$(database)/documents/users/$(id)).data.get('grade', '');
+      return grade is int ? grade : {
+        'Grade 1': 1, 'Grade 2': 2, 'Grade 3': 3, 'Grade 4': 4, 'Grade 5': 5, 'Grade 6': 6,
+        '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6
+      }.get(grade, 0);
+    }
+
+    // Teacher module data is isolated from existing profile/score collections.
+    match /teacherLibraries/{ownerUid} {
+      function ownsLibrary() {
+        return isScoreTeacher() && request.auth.uid == ownerUid;
+      }
+      match /folders/{folderId} {
+        allow read: if ownsLibrary() || moduleStudent();
+        allow create: if ownsLibrary() &&
+          request.resource.data.keys().hasOnly(['Name']) &&
+          request.resource.data.Name is string &&
+          request.resource.data.Name.size() > 0 && request.resource.data.Name.size() <= 100;
+        allow update, delete: if false;
+      }
+      match /modules/{moduleId} {
+        function validModule() {
+          let m = request.resource.data;
+          return m.keys().hasOnly(['Title', 'FolderId', 'Grade', 'FileName', 'StoragePath', 'Archived', 'Revision']) &&
+            m.Title is string && m.Title.size() > 0 && m.Title.size() <= 100 &&
+            m.FolderId is string && exists(/databases/$(database)/documents/teacherLibraries/$(ownerUid)/folders/$(m.FolderId)) &&
+            m.Grade is int && m.Grade >= 1 && m.Grade <= 6 &&
+            m.FileName is string && m.FileName.size() > 0 && m.FileName.size() <= 255 &&
+            m.StoragePath is string && m.StoragePath.matches('teacherModules/' + ownerUid + '/' + moduleId + '/[a-f0-9]{32}[.]pdf') &&
+            m.Archived is bool && m.Revision is int;
+        }
+        allow read: if ownsLibrary() || (moduleStudent() &&
+          resource.data.Archived == false && resource.data.Grade == moduleStudentGrade());
+        allow create: if ownsLibrary() && validModule() && request.resource.data.Revision == 1;
+        allow update: if ownsLibrary() && validModule() && request.resource.data.Revision == resource.data.Revision + 1;
+        allow delete: if ownsLibrary();
+      }
+    }
+
+    match /users/{userId} {
+      // Preserve existing profile-read behavior. Grade writes require Firebase Auth.
+      allow read: if true;
+      allow create, delete: if false;
+      allow update: if isGradeTeacher() && resource.data.role == 'student' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'academicGrades', 'teacherRemark', 'gradesUpdatedAt', 'gradesUpdatedBy']) &&
+        request.resource.data.gradesUpdatedAt == request.time &&
+        validAcademicGrades() &&
+        (!('teacherRemark' in request.resource.data) || request.resource.data.teacherRemark is string);
+    }
+
+    match /activityScores/{document=**} {
+      allow read: if isAdmin() || isScoreTeacher() || isOwnActivity() || isLinkedParent(resource.data.userId);
+      // Only the authenticated student can create their activity results.
+      // A parent may read the linked child's history but cannot impersonate them.
+      allow create: if canSaveOwnActivity();
+      allow update, delete: if isAdmin();
+    }
+
+    match /studentPerformance/{document=**} {
+      allow read: if isAdmin() || signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /archivedStudents/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    match /adminSettings/{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
+
+

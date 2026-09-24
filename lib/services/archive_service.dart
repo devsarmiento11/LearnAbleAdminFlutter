@@ -9,6 +9,12 @@ abstract class ArchiveService {
 
   Future<void> setCurrentSchoolYear(String schoolYear);
 
+  /// Reopens a year without deleting its saved student summaries.
+  Future<void> unarchiveSchoolYear(String schoolYear);
+
+  /// Includes reopened years outside the dashboard's generated date range.
+  Future<List<String>> getUnarchivedSchoolYears();
+
   // =========================================================
   // ARCHIVE SCHOOL YEAR
   // =========================================================

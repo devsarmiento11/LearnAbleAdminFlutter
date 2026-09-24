@@ -9,10 +9,12 @@ class StudentModel {
   final String lastName;
 
   final String grade;
+  final String schoolYear;
   final String condition;
 
   final DateTime birthday;
   final int age;
+  final String gender;
 
   final String address;
 
@@ -35,9 +37,11 @@ class StudentModel {
     required this.middleName,
     required this.lastName,
     required this.grade,
+    this.schoolYear = '',
     required this.condition,
     required this.birthday,
     required this.age,
+    this.gender = '',
     required this.address,
     required this.motherFirstName,
     required this.motherLastName,
@@ -60,6 +64,8 @@ class StudentModel {
   }
 
   Map<String, dynamic> toMap() {
+    // Enrollment is managed by the promotion transaction. Profile edits merge
+    // these fields without overwriting the saved school year or promotion log.
     return {
       'id': id,
       'username': username,
@@ -70,6 +76,7 @@ class StudentModel {
       'condition': condition,
       'birthday': birthday.toIso8601String(),
       'age': age,
+      'gender': gender,
       'address': address,
       'motherFirstName': motherFirstName,
       'motherLastName': motherLastName,
@@ -90,9 +97,11 @@ class StudentModel {
       middleName: map['middleName'] ?? '',
       lastName: map['lastName'] ?? '',
       grade: map['grade'] ?? '',
+      schoolYear: map['schoolYear']?.toString() ?? '',
       condition: map['condition'] ?? '',
       birthday: _parseDate(map['birthday']),
       age: _parseInt(map['age']),
+      gender: map['gender']?.toString() ?? '',
       address: map['address'] ?? '',
       motherFirstName: map['motherFirstName'] ?? '',
       motherLastName: map['motherLastName'] ?? '',

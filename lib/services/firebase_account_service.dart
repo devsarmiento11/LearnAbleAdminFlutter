@@ -1,14 +1,20 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/student_model.dart';
 import '../models/teacher_model.dart';
+import '../models/parent_model.dart';
 import 'account_service.dart';
 
 class FirebaseAccountService implements AccountService {
-  FirebaseAccountService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  FirebaseAccountService({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _functions = functions ?? FirebaseFunctions.instance;
   static final FirebaseAccountService instance = FirebaseAccountService();
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
   final Random _random = Random.secure();
   final Set<String> _reservedIds = <String>{};
   CollectionReference<Map<String, dynamic>> get _users =>
@@ -33,45 +39,26 @@ class FirebaseAccountService implements AccountService {
   @override
   Future<String> generateTeacherId() => _generate('T');
 
-  Future<void> _ensureUniqueUsername(
-    String username, {
-    String? exceptId,
-  }) async {
-    final normalized = username.trim().toLowerCase();
-    final direct = await _users
-        .where('usernameLower', isEqualTo: normalized)
-        .limit(2)
-        .get();
-    if (direct.docs.any((doc) => doc.id != exceptId)) {
-      throw Exception('This username is already in use.');
-    }
-    // Also protects older records created before usernameLower was introduced.
-    final legacy = await _users
-        .where('username', isEqualTo: username.trim())
-        .limit(2)
-        .get();
-    if (legacy.docs.any((doc) => doc.id != exceptId)) {
-      throw Exception('This username is already in use.');
-    }
-  }
+  @override
+  Future<String> generateParentId() => _generate('P');
 
-  Map<String, dynamic> _profile(
-    Map<String, dynamic> data,
-    String id,
-    String username,
-    String name,
-    String role,
-  ) => {
-    ...data,
-    'id': id,
-    'userId': id,
-    'schoolId': id,
-    'username': username.trim(),
-    'usernameLower': username.trim().toLowerCase(),
-    'name': name,
-    'role': role,
-    'updatedAt': FieldValue.serverTimestamp(),
-  };
+  @override
+  Future<void> createParent({
+    required ParentModel parent,
+    required String password,
+  }) async {
+    if (password.length < 6) {
+      throw Exception('Password must contain at least 6 characters.');
+    }
+    await _createAccount(
+      id: parent.id,
+      username: parent.id,
+      password: password,
+      role: 'parent',
+      profile: parent.toMap(),
+    );
+    _reservedIds.remove(parent.id);
+  }
 
   @override
   Future<void> createStudent({
@@ -81,21 +68,13 @@ class FirebaseAccountService implements AccountService {
     if (password.length < 6) {
       throw Exception('Password must contain at least 6 characters.');
     }
-    if ((await _users.doc(student.id).get()).exists) {
-      throw Exception('This Student ID already exists.');
-    }
-    await _ensureUniqueUsername(student.username);
-    await _users
-        .doc(student.id)
-        .set(
-          _profile(
-            student.toMap(),
-            student.id,
-            student.username,
-            student.fullName,
-            'student',
-          ),
-        );
+    await _createAccount(
+      id: student.id,
+      username: student.username,
+      password: password,
+      role: 'student',
+      profile: student.toMap(),
+    );
     _reservedIds.remove(student.id);
   }
 
@@ -107,22 +86,30 @@ class FirebaseAccountService implements AccountService {
     if (password.length < 6) {
       throw Exception('Password must contain at least 6 characters.');
     }
-    if ((await _users.doc(teacher.id).get()).exists) {
-      throw Exception('This Teacher ID already exists.');
-    }
-    await _ensureUniqueUsername(teacher.username);
-    await _users
-        .doc(teacher.id)
-        .set(
-          _profile(
-            teacher.toMap(),
-            teacher.id,
-            teacher.username,
-            teacher.fullName,
-            'teacher',
-          ),
-        );
+    await _createAccount(
+      id: teacher.id,
+      username: teacher.username,
+      password: password,
+      role: 'teacher',
+      profile: teacher.toMap(),
+    );
     _reservedIds.remove(teacher.id);
+  }
+
+  Future<void> _createAccount({
+    required String id,
+    required String username,
+    required String password,
+    required String role,
+    required Map<String, dynamic> profile,
+  }) async {
+    await _functions.httpsCallable('createManagedAccount').call<void>({
+      'id': id,
+      'username': username.trim(),
+      'password': password,
+      'role': role,
+      'profile': profile,
+    });
   }
 
   @override
@@ -150,43 +137,47 @@ class FirebaseAccountService implements AccountService {
   }
 
   @override
+  Future<List<ParentModel>> getParents() async {
+    final snapshot = await _users.where('role', isEqualTo: 'parent').get();
+    final values = snapshot.docs
+        .map((doc) => ParentModel.fromMap({...doc.data(), 'id': doc.id}))
+        .toList();
+    values.sort(
+      (a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
+    );
+    return values;
+  }
+
+  @override
   Future<void> updateStudent(StudentModel student) async {
-    await _ensureUniqueUsername(student.username, exceptId: student.id);
-    await _users
-        .doc(student.id)
-        .set(
-          _profile(
-            student.toMap(),
-            student.id,
-            student.username,
-            student.fullName,
-            'student',
-          ),
-          SetOptions(merge: true),
-        );
+    await _updateAccount(student.id, student.username, student.toMap());
   }
 
   @override
   Future<void> updateTeacher(TeacherModel teacher) async {
-    await _ensureUniqueUsername(teacher.username, exceptId: teacher.id);
-    await _users
-        .doc(teacher.id)
-        .set(
-          _profile(
-            teacher.toMap(),
-            teacher.id,
-            teacher.username,
-            teacher.fullName,
-            'teacher',
-          ),
-          SetOptions(merge: true),
-        );
+    await _updateAccount(teacher.id, teacher.username, teacher.toMap());
+  }
+
+  Future<void> _updateAccount(
+    String id,
+    String username,
+    Map<String, dynamic> profile,
+  ) async {
+    await _functions.httpsCallable('updateManagedAccount').call<void>({
+      'id': id,
+      'username': username.trim(),
+      'profile': profile,
+    });
   }
 
   @override
-  Future<void> deleteStudent(String studentId) =>
-      _users.doc(studentId).delete();
+  Future<void> deleteStudent(String studentId) => _deleteAccount(studentId);
   @override
-  Future<void> deleteTeacher(String teacherId) =>
-      _users.doc(teacherId).delete();
+  Future<void> deleteTeacher(String teacherId) => _deleteAccount(teacherId);
+
+  @override
+  Future<void> deleteParent(String parentId) => _deleteAccount(parentId);
+
+  Future<void> _deleteAccount(String id) =>
+      _functions.httpsCallable('deleteManagedAccount').call<void>({'id': id});
 }

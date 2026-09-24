@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../models/student_model.dart';
 import '../models/teacher_model.dart';
+import '../models/parent_model.dart';
 import 'account_service.dart';
 
 class MockAccountService implements AccountService {
@@ -11,6 +12,50 @@ class MockAccountService implements AccountService {
 
   final List<StudentModel> _students = [];
   final List<TeacherModel> _teachers = [];
+  final List<ParentModel> _parents = [];
+  final Set<String> _generatedParentIds = {};
+
+  @override
+  Future<void> deleteParent(String parentId) async {
+    _parents.removeWhere((p) => p.id == parentId);
+  }
+
+  @override
+  Future<List<ParentModel>> getParents() async => List.of(_parents)
+    ..sort(
+      (a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
+    );
+
+  @override
+  Future<String> generateParentId() async {
+    for (int attempt = 0; attempt < 100; attempt++) {
+      final id = 'P${(_random.nextInt(9999) + 1).toString().padLeft(4, '0')}';
+      if (!_generatedParentIds.contains(id) &&
+          !_parents.any((parent) => parent.id == id)) {
+        _generatedParentIds.add(id);
+        return id;
+      }
+    }
+    throw Exception('Unable to generate Parents ID. Please retry.');
+  }
+
+  @override
+  Future<void> createParent({
+    required ParentModel parent,
+    required String password,
+  }) async {
+    if (password.length < 6) {
+      throw Exception('Password must contain at least 6 characters.');
+    }
+    if (_parents.any((saved) => saved.id == parent.id)) {
+      throw Exception('This Parents ID already exists.');
+    }
+    if (!_students.any((student) => student.id == parent.childrenId)) {
+      throw Exception('Children ID must belong to an existing student.');
+    }
+    _parents.add(parent);
+    _generatedParentIds.remove(parent.id);
+  }
 
   final Random _random = Random();
 

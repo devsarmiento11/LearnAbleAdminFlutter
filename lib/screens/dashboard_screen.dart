@@ -1,3 +1,4 @@
+import '../widgets/report_navigation_item.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
@@ -212,6 +213,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .getArchivedSchoolYears();
 
       final List<String> choices = _createSchoolYearChoices();
+      choices.addAll(await archiveService.getUnarchivedSchoolYears());
 
       if (_isValidSchoolYear(savedSchoolYear)) {
         choices.add(savedSchoolYear);
@@ -293,7 +295,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           const SnackBar(
-            content: Text('Archived school years cannot be used again.'),
+            content: Text('Unarchive this school year in Registered Accounts first.'),
           ),
         );
 
@@ -1874,6 +1876,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               },
             ),
 
+            const ReportNavigationItem(),
+
             const Spacer(),
 
             const Text(
@@ -1959,9 +1963,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   context,
 
                   MaterialPageRoute(
-                    builder: (_) => const LoginScreen(
-                      authService: FirebaseAdminAuthService(),
-                    ),
+                    builder: (_) =>
+                        LoginScreen(authService: FirebaseAdminAuthService()),
                   ),
 
                   (route) => false,

@@ -22,7 +22,7 @@ class LearnAbleAdminApp extends StatelessWidget {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFA56B2F)),
       ),
-      home: const LoginScreen(authService: FirebaseAdminAuthService()),
+      home: LoginScreen(authService: FirebaseAdminAuthService()),
     );
   }
 }

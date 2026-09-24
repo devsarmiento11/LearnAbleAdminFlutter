@@ -28,6 +28,35 @@ class FirebaseArchiveService implements ArchiveService {
     }, SetOptions(merge: true));
   }
 
+  List<String> _years(Map<String, dynamic>? data, String field) =>
+      (data?[field] as List<dynamic>? ?? const []).whereType<String>().toList();
+
+  @override
+  Future<List<String>> getUnarchivedSchoolYears() async =>
+      _years((await _settings.get()).data(), 'unarchivedSchoolYears')..sort();
+
+  @override
+  Future<void> unarchiveSchoolYear(String schoolYear) async {
+    final year = schoolYear.trim();
+    if (year.isEmpty) throw Exception('School year cannot be empty.');
+    if (!(await getArchivedSchoolYears()).contains(year)) {
+      throw Exception('School Year $year is no longer archived.');
+    }
+    await _firestore.runTransaction((transaction) async {
+      final data = (await transaction.get(_settings)).data();
+      if (_years(data, 'unarchivedSchoolYears').contains(year)) {
+        throw Exception('School Year $year is no longer archived.');
+      }
+      transaction.set(_settings, {
+        'unarchivedSchoolYears': FieldValue.arrayUnion([year]),
+        'archivedSchoolYears': FieldValue.arrayRemove([year]),
+        // An old saved value must not silently reactivate the reopened year.
+        if (data?['currentSchoolYear'] == year) 'currentSchoolYear': '',
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+  }
+
   @override
   Future<void> archiveSchoolYear({
     required String schoolYear,
@@ -35,9 +64,7 @@ class FirebaseArchiveService implements ArchiveService {
   }) async {
     final year = schoolYear.trim();
     if (year.isEmpty) throw Exception('School year cannot be empty.');
-    if ((await _archives.where('schoolYear', isEqualTo: year).limit(1).get())
-        .docs
-        .isNotEmpty) {
+    if ((await getArchivedSchoolYears()).contains(year)) {
       throw Exception('School Year $year has already been archived.');
     }
     WriteBatch batch = _firestore.batch();
@@ -54,6 +81,11 @@ class FirebaseArchiveService implements ArchiveService {
       }
     }
     if (count > 0) await batch.commit();
+    await _settings.set({
+      'archivedSchoolYears': FieldValue.arrayUnion([year]),
+      'unarchivedSchoolYears': FieldValue.arrayRemove([year]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   List<ArchivedStudentSummary> _map(
@@ -81,12 +113,15 @@ class FirebaseArchiveService implements ArchiveService {
       _map(await _archives.where('schoolYear', isEqualTo: schoolYear).get());
   @override
   Future<List<String>> getArchivedSchoolYears() async {
-    final values = (await _archives.get()).docs
-        .map((doc) => doc.data()['schoolYear']?.toString() ?? '')
-        .where((year) => year.isNotEmpty)
-        .toSet()
-        .toList();
-    values.sort((a, b) => b.compareTo(a));
-    return values;
+    final data = (await _settings.get()).data();
+    final reopened = _years(data, 'unarchivedSchoolYears').toSet();
+    final values =
+        (await _archives.get()).docs
+            .map((doc) => doc.data()['schoolYear']?.toString() ?? '')
+            .where((year) => year.isNotEmpty)
+            .toSet()
+          ..addAll(_years(data, 'archivedSchoolYears'))
+          ..removeAll(reopened);
+    return values.toList()..sort((a, b) => b.compareTo(a));
   }
 }

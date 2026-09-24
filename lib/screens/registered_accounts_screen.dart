@@ -1,3 +1,5 @@
+import '../widgets/report_navigation_item.dart';
+import '../widgets/registered_parents_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -7,6 +9,8 @@ import '../services/account_service.dart';
 import '../services/archive_service.dart';
 import '../services/firebase_account_service.dart';
 import '../services/firebase_archive_service.dart';
+import '../services/firebase_promotion_service.dart';
+import '../services/promotion_service.dart';
 import '../services/firebase_auth_service.dart';
 import '../widgets/archived_students_section.dart';
 
@@ -29,11 +33,13 @@ const Color registeredLightBrown = Color(0xFFF7F1E9);
 class RegisteredAccountsScreen extends StatefulWidget {
   final AccountService? accountService;
   final ArchiveService? archiveService;
+  final PromotionService? promotionService;
 
   const RegisteredAccountsScreen({
     super.key,
     this.accountService,
     this.archiveService,
+    this.promotionService,
   });
 
   @override
@@ -404,7 +410,7 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
                       const SizedBox(height: 5),
 
                       const Text(
-                        'Manage all registered student and teacher accounts.',
+                        'Manage all registered student, teacher, and parent accounts.',
 
                         style: TextStyle(color: registeredMuted, fontSize: 13),
                       ),
@@ -419,6 +425,8 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
                         _buildLoading()
                       else if (accountType == 'student')
                         _buildStudentSection()
+                      else if (accountType == 'parent')
+                        RegisteredParentsSection(accountService: accountService)
                       else
                         _buildTeacherSection(),
                     ],
@@ -489,6 +497,17 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
               });
             },
           ),
+          const SizedBox(height: 10),
+          _AccountTypeOption(
+            selected: accountType == 'parent',
+            icon: Icons.family_restroom,
+            title: 'Parent Account',
+            subtitle: 'View registered parents and their linked children.',
+            onTap: () {
+              FocusScope.of(context).unfocus();
+              setState(() => accountType = 'parent');
+            },
+          ),
         ],
       ),
     );
@@ -528,7 +547,12 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
         if (studentViewMode == 'active')
           _buildActiveStudentSection()
         else
-          ArchivedStudentsSection(archiveService: archiveService),
+          ArchivedStudentsSection(
+            archiveService: archiveService,
+            promotionService:
+                widget.promotionService ?? FirebasePromotionService.instance,
+            onPromoted: _loadAccounts,
+          ),
       ],
     );
   }
@@ -1072,6 +1096,8 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
                   _detailRow('Student ID', student.id),
 
                   _detailRow('Grade', student.grade),
+                  if (student.schoolYear.isNotEmpty)
+                    _detailRow('Enrolled School Year', student.schoolYear),
 
                   _detailRow('Learning Condition', student.condition),
 
@@ -1417,14 +1443,15 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
 
                             value: grade,
 
-                            items: const [
+                            items: <String>{
                               'Grade 1',
                               'Grade 2',
                               'Grade 3',
                               'Grade 4',
                               'Grade 5',
                               'Grade 6',
-                            ],
+                              grade,
+                            }.toList(),
 
                             onChanged: (String? value) {
                               if (value == null) return;
@@ -2790,8 +2817,10 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
-                    builder: (_) =>
-                        DashboardScreen(accountService: accountService),
+                    builder: (_) => DashboardScreen(
+                      accountService: accountService,
+                      archiveService: archiveService,
+                    ),
                   ),
                 );
               },
@@ -2826,6 +2855,8 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
                 Navigator.pop(context);
               },
             ),
+
+            const ReportNavigationItem(),
 
             const Spacer(),
 
@@ -2901,9 +2932,8 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
 
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(
-                    builder: (_) => const LoginScreen(
-                      authService: FirebaseAdminAuthService(),
-                    ),
+                    builder: (_) =>
+                        LoginScreen(authService: FirebaseAdminAuthService()),
                   ),
 
                   (Route<dynamic> route) => false,
@@ -3087,7 +3117,15 @@ class _AccountTypeOption extends StatelessWidget {
 
           child: Row(
             children: [
-              Icon(icon, color: registeredAccent, size: 22),
+              if (title == 'Parent Account')
+                Image.asset(
+                  'assets/images/parents_icon.png',
+                  width: 22,
+                  height: 22,
+                  color: registeredAccent,
+                )
+              else
+                Icon(icon, color: registeredAccent, size: 22),
 
               const SizedBox(width: 12),
 
@@ -3244,6 +3282,8 @@ class _StudentAccountCard extends StatelessWidget {
 
             children: [
               _InfoChip(label: student.grade),
+              if (student.schoolYear.isNotEmpty)
+                _InfoChip(label: student.schoolYear),
 
               _InfoChip(label: student.condition),
 
