@@ -5,6 +5,7 @@ import '../models/student_model.dart';
 import '../models/teacher_model.dart';
 import '../models/parent_model.dart';
 import 'account_service.dart';
+import 'firebase_archive_service.dart';
 
 class FirebaseAccountService implements AccountService {
   FirebaseAccountService({
@@ -68,12 +69,18 @@ class FirebaseAccountService implements AccountService {
     if (password.length < 6) {
       throw Exception('Password must contain at least 6 characters.');
     }
+    final schoolYear = (await FirebaseArchiveService(
+      firestore: _firestore,
+    ).getCurrentSchoolYear()).trim();
+    if (schoolYear.isEmpty) {
+      throw Exception('Set the active school year on the dashboard first.');
+    }
     await _createAccount(
       id: student.id,
       username: student.username,
       password: password,
       role: 'student',
-      profile: student.toMap(),
+      profile: {...student.toMap(), 'schoolYear': schoolYear},
     );
     _reservedIds.remove(student.id);
   }

@@ -84,6 +84,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   final TextEditingController studentConfirmPassword = TextEditingController();
 
   String? selectedGrade;
+  String? selectedSet;
   String? selectedCondition;
   String? selectedStudentGender;
   DateTime? selectedBirthday;
@@ -347,6 +348,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
         lastName: studentLastName.text.trim(),
 
         grade: selectedGrade!,
+        studentSet: selectedSet!,
 
         condition: selectedCondition!,
 
@@ -1007,6 +1009,17 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                     setState(() {
                       selectedGrade = value;
                     });
+                  },
+                ),
+
+                _buildDropdown(
+                  label: 'Set',
+                  required: true,
+                  value: selectedSet,
+                  hint: 'Select Set',
+                  items: const ['A - Morning', 'B - Afternoon'],
+                  onChanged: (String? value) {
+                    setState(() => selectedSet = value);
                   },
                 ),
 

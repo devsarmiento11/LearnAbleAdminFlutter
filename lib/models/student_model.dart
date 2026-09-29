@@ -9,6 +9,7 @@ class StudentModel {
   final String lastName;
 
   final String grade;
+  final String studentSet;
   final String schoolYear;
   final String condition;
 
@@ -37,6 +38,7 @@ class StudentModel {
     required this.middleName,
     required this.lastName,
     required this.grade,
+    this.studentSet = '',
     this.schoolYear = '',
     required this.condition,
     required this.birthday,
@@ -73,6 +75,7 @@ class StudentModel {
       'middleName': middleName,
       'lastName': lastName,
       'grade': grade,
+      if (studentSet.isNotEmpty) 'set': studentSet,
       'condition': condition,
       'birthday': birthday.toIso8601String(),
       'age': age,
@@ -97,6 +100,7 @@ class StudentModel {
       middleName: map['middleName'] ?? '',
       lastName: map['lastName'] ?? '',
       grade: map['grade'] ?? '',
+      studentSet: map['set']?.toString() ?? '',
       schoolYear: map['schoolYear']?.toString() ?? '',
       condition: map['condition'] ?? '',
       birthday: _parseDate(map['birthday']),

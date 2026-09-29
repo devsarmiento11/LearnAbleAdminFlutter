@@ -91,7 +91,8 @@ service cloud.firestore {
           request.resource.data.keys().hasOnly(['Name']) &&
           request.resource.data.Name is string &&
           request.resource.data.Name.size() > 0 && request.resource.data.Name.size() <= 100;
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if ownsLibrary();
       }
       match /modules/{moduleId} {
         function validModule() {

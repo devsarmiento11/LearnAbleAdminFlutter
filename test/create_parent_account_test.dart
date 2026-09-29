@@ -70,6 +70,37 @@ Future<void> fillParent(
 }
 
 void main() {
+  test('student set survives profile serialization without replacing enrollment year', () {
+    final student = StudentModel.fromMap({
+      'id': 'S1234',
+      'set': 'B - Afternoon',
+      'schoolYear': '2025-2026',
+    });
+    expect(student.studentSet, 'B - Afternoon');
+    expect(student.schoolYear, '2025-2026');
+    expect(student.toMap()['set'], 'B - Afternoon');
+    expect(student.toMap().containsKey('schoolYear'), isFalse);
+    expect(StudentModel.fromMap({'id': 'S1234'}).toMap().containsKey('set'), isFalse);
+  });
+
+  testWidgets('student set is required and offers morning and afternoon below grade', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: CreateAccountScreen(accountService: ParentAccounts())));
+    await tester.pumpAndSettle();
+    final grade = find.byKey(const ValueKey('Grade-null'));
+    final set = find.byKey(const ValueKey('Set-null'));
+    await tester.ensureVisible(set);
+    expect(tester.getTopLeft(set).dy, greaterThan(tester.getTopLeft(grade).dy));
+    final dropdown = tester.widget<DropdownButtonFormField<String>>(set);
+    expect(dropdown.validator!(null), isNotNull);
+    await tester.tap(set);
+    await tester.pumpAndSettle();
+    expect(find.text('A - Morning'), findsOneWidget);
+    expect(find.text('B - Afternoon'), findsOneWidget);
+    await tester.tap(find.text('B - Afternoon'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('Set-B - Afternoon')), findsOneWidget);
+  });
+
   testWidgets('all account IDs start empty, accept typing, and have no generator', (tester) async {
     final service = ParentAccounts();
     await tester.pumpWidget(MaterialApp(home: CreateAccountScreen(accountService: service)));

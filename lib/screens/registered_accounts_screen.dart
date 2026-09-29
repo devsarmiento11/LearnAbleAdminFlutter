@@ -1314,6 +1314,10 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
     );
 
     String grade = student.grade;
+    String? studentSet = const ['A - Morning', 'B - Afternoon']
+            .contains(student.studentSet)
+        ? student.studentSet
+        : null;
 
     String condition = student.condition;
 
@@ -1459,6 +1463,15 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
                               setSheetState(() {
                                 grade = value;
                               });
+                            },
+                          ),
+
+                          _editDropdown(
+                            label: 'Set',
+                            value: studentSet,
+                            items: const ['A - Morning', 'B - Afternoon'],
+                            onChanged: (String? value) {
+                              setSheetState(() => studentSet = value);
                             },
                           ),
 
@@ -1627,6 +1640,7 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
                                             final StudentModel updated =
                                                 StudentModel(
                                                   id: student.id,
+                                                  studentSet: studentSet ?? student.studentSet,
                                                   username: student.username,
 
                                                   firstName: first.text.trim(),
@@ -2133,7 +2147,7 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
 
   Widget _editDropdown({
     required String label,
-    required String value,
+    required String? value,
     required List<String> items,
     required ValueChanged<String?> onChanged,
   }) {
@@ -2152,6 +2166,8 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
             key: ValueKey('$label-$value'),
 
             initialValue: value,
+
+            hint: Text('Select $label'),
 
             isExpanded: true,
 
