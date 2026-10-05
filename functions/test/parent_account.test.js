@@ -14,6 +14,14 @@ test('reject invalid parent ID, child ID and missing personal information', () =
     assert.throws(() => parentProfile('P0001', 'P0001', {...profile, ...changed}, HttpsError));
   }
 });
+test('parent accepts 1–12 LRN digits and preserves leading zeros', () => {
+  for (const childrenId of ['1', '123456789999', '001234567899']) {
+    assert.equal(parentProfile('P0001', 'P0001', {...profile, childrenId}, HttpsError).childrenId, childrenId);
+  }
+  for (const childrenId of ['1234567899999', '123abc']) {
+    assert.throws(() => parentProfile('P0001', 'P0001', {...profile, childrenId}, HttpsError));
+  }
+});
 test('save requires an existing student and a unique Parents ID', async () => {
   for (const [exists, childRole, parentExists, succeeds] of [[true, 'student', false, true], [false, '', false, false], [true, 'teacher', false, false], [true, 'student', true, false]]) {
     let saved = null;
@@ -21,8 +29,8 @@ test('save requires an existing student and a unique Parents ID', async () => {
       get: async (ref) => ref.id === 'P0001' ? {exists: parentExists} : {exists, data: () => ({role: childRole})},
       create: (ref, data) => {saved = data;},
     })};
-    const operation = saveParentProfile({db, reference: {id: 'P0001'}, data: {childrenId: 'S2144'}, HttpsError});
-    if (succeeds) { await operation; assert.equal(saved.childrenId, 'S2144'); }
+    const operation = saveParentProfile({db, reference: {id: 'P0001'}, data: {childrenId: '001234567899'}, HttpsError});
+    if (succeeds) { await operation; assert.equal(saved.childrenId, '001234567899'); }
     else { await assert.rejects(operation); assert.equal(saved, null); }
   }
 });

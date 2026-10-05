@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/activity_record_model.dart';
 import 'activity_service.dart';
+import 'activity_school_year.dart';
 
 class FirebaseActivityService implements ActivityService {
   FirebaseActivityService({FirebaseFirestore? firestore})
@@ -13,7 +14,18 @@ class FirebaseActivityService implements ActivityService {
   String _learningArea(Map<String, dynamic> data) {
     final explicit =
         (data['learningArea'] ?? data['subject'])?.toString().trim() ?? '';
-    if (explicit.isNotEmpty) return explicit;
+    if (explicit.isNotEmpty) {
+      switch (explicit.toLowerCase()) {
+        case 'math':
+        case 'mathematics':
+          return 'Mathematics';
+        case 'english':
+          return 'English';
+        case 'science':
+          return 'Science';
+      }
+      return explicit;
+    }
     final name = (data['activityName'] ?? '').toString().toLowerCase();
     if (name.contains('math') ||
         name.contains('number') ||
@@ -25,7 +37,8 @@ class FirebaseActivityService implements ActivityService {
         name.contains('animal')) {
       return 'Science';
     }
-    if (name.contains('trace') ||
+    if (name.contains('english') ||
+        name.contains('trac') ||
         name.contains('read') ||
         name.contains('letter')) {
       return 'English';
@@ -39,24 +52,38 @@ class FirebaseActivityService implements ActivityService {
         .where('role', isEqualTo: 'student')
         .get();
     return {
-      for (final doc in users.docs)
-        doc.id: (doc.data()['name'] ?? doc.data()['username'] ?? doc.id)
-            .toString(),
+      for (final doc in users.docs) doc.id: _displayName(doc.id, doc.data()),
     };
+  }
+
+  String _displayName(String id, Map<String, dynamic> data) {
+    final fullName = ['firstName', 'middleName', 'lastName']
+        .map((key) => data[key]?.toString().trim() ?? '')
+        .where((part) => part.isNotEmpty)
+        .join(' ');
+    if (fullName.isNotEmpty) return fullName;
+    for (final key in ['name', 'username']) {
+      final value = data[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return id;
   }
 
   Future<List<ActivityRecordModel>> _load({
     String? studentId,
     required String schoolYear,
   }) async {
-    Query<Map<String, dynamic>> query = _scores;
-    if (studentId != null) query = query.where('userId', isEqualTo: studentId);
-    final snapshot = await query.get();
+    // Both Unity userId and admin studentId records are supported.
+    final snapshot = await _scores.get();
     final names = await _studentNames();
     final values = snapshot.docs
         .where((doc) {
-          final year = doc.data()['schoolYear']?.toString() ?? '';
-          return year.isEmpty || year == schoolYear;
+          final data = doc.data();
+          final id = (data['userId'] ?? data['studentId'])?.toString() ?? '';
+          if (studentId != null && id != studentId) return false;
+          final year = data['schoolYear']?.toString().trim() ?? '';
+          if (year.isNotEmpty) return year == schoolYear;
+          return legacyActivitySchoolYear(data['completedAt']) == schoolYear;
         })
         .map((doc) {
           final data = doc.data();
@@ -67,7 +94,7 @@ class FirebaseActivityService implements ActivityService {
             'studentId': id,
             'studentName': (data['studentName'] ?? names[id] ?? id).toString(),
             'learningArea': _learningArea(data),
-            'schoolYear': data['schoolYear'] ?? schoolYear,
+            'schoolYear': schoolYear,
           });
         })
         .toList();

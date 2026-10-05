@@ -14,6 +14,14 @@ class MockArchiveService implements ArchiveService {
   final Set<String> _unarchivedSchoolYears = <String>{};
 
   @override
+  Future<void> addSchoolYear(String schoolYear) async {
+    if (_archivedSchoolYears.contains(schoolYear)) {
+      throw Exception('School year is archived.');
+    }
+    _unarchivedSchoolYears.add(schoolYear);
+  }
+
+  @override
   Future<List<String>> getUnarchivedSchoolYears() async =>
       _unarchivedSchoolYears.toList()..sort();
 

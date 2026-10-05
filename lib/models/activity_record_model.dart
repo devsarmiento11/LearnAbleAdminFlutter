@@ -50,7 +50,7 @@ class ActivityRecordModel {
       completedAt: map['completedAt'] is Timestamp
           ? (map['completedAt'] as Timestamp).toDate()
           : DateTime.tryParse(map['completedAt']?.toString() ?? '') ??
-                DateTime.now(),
+                DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
     );
   }
 }

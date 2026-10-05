@@ -282,6 +282,17 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     return null;
   }
 
+  String? _studentIdValidator(String? value) {
+    final requiredError = _requiredValidator(value);
+    if (requiredError != null) return requiredError;
+    final id = value!.trim();
+    if (RegExp(r'^[0-9]{1,12}$').hasMatch(id)) return null;
+    if (RegExp(r'^S[0-9]{4}$').hasMatch(id) && id != 'S0000') {
+      return null;
+    }
+    return 'Enter a Student ID (e.g. S1234) or an LRN with 1–12 digits.';
+  }
+
   String? _emailValidator(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Email is required.';
@@ -1219,15 +1230,15 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                 const SizedBox(height: 22),
 
                 _buildTextField(
-                  label: 'Student ID',
+                  label: 'Student ID or LRN',
 
                   required: true,
 
                   controller: studentId,
-                  hint: 'Enter Student ID (e.g. S1234)',
+                  hint: 'Enter Student ID or LRN (e.g. S1234 or 123456789999)',
                   autocorrect: false,
                   enableSuggestions: false,
-                  validator: (value) => _accountIdValidator(value, 'S'),
+                  validator: _studentIdValidator,
                 ),
 
                 _buildTextField(
@@ -1472,20 +1483,20 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                 ),
 
                 _buildTextField(
-                  label: 'Children ID',
+                  label: 'Children ID or LRN',
                   required: true,
                   controller: childrenId,
-                  hint: 'Enter existing Student ID (e.g. S2144)',
+                  hint: 'Enter existing Student ID or LRN (e.g. S2144 or 123456789999)',
                   autocorrect: false,
                   enableSuggestions: false,
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Children ID is required.';
+                      return 'Children ID or LRN is required.';
                     }
                     if (!RegExp(
-                      r'^S[0-9]{4}$',
+                      r'^(S[0-9]{4}|[0-9]{1,12})$',
                     ).hasMatch(value.trim().toUpperCase())) {
-                      return 'Enter a valid Student ID (e.g. S2144).';
+                      return 'Enter a Student ID (e.g. S2144) or an LRN with 1–12 digits.';
                     }
                     return null;
                   },

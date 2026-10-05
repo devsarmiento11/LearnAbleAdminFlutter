@@ -71,9 +71,10 @@ class TeacherModel {
     if (value is Timestamp) return value.toDate();
 
     if (value is String) {
-      return DateTime.tryParse(value) ?? DateTime.now();
+      return DateTime.tryParse(value) ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
     }
 
-    return DateTime.now();
+    return DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
   }
 }

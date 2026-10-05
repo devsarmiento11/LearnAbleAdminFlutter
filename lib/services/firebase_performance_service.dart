@@ -8,7 +8,8 @@ class FirebasePerformanceService implements PerformanceService {
     FirebaseFirestore? firestore,
     FirebaseActivityService? activities,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
-       _activities = activities ?? FirebaseActivityService.instance;
+       _activities =
+           activities ?? FirebaseActivityService(firestore: firestore);
   static final FirebasePerformanceService instance =
       FirebasePerformanceService();
   final FirebaseFirestore _firestore;

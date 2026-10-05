@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/archived_student_summary.dart';
 import '../models/student_model.dart';
+import '../models/dashboard_summary.dart';
 import '../models/student_performance_model.dart';
 import '../models/teacher_model.dart';
 import '../services/account_service.dart';
@@ -14,6 +15,7 @@ import '../services/firebase_activity_service.dart';
 import '../services/firebase_performance_service.dart';
 import '../services/performance_service.dart';
 import '../services/activity_service.dart';
+import '../services/activity_school_year.dart';
 import '../services/firebase_auth_service.dart';
 import '../widgets/school_year_panel.dart';
 
@@ -86,36 +88,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   int get activeAccounts {
     final int activeStudents = students.where((StudentModel student) {
-      return student.status.toLowerCase() == 'active';
+      return student.status.trim().toLowerCase() == 'active';
     }).length;
 
     final int activeTeachers = teachers.where((TeacherModel teacher) {
-      return teacher.status.toLowerCase() == 'active';
+      return teacher.status.trim().toLowerCase() == 'active';
     }).length;
 
     return activeStudents + activeTeachers;
   }
 
   // ============================================================
-  // TEMPORARY SCORE DATA
-  //
-  // Firebase can replace these later.
+  // COMPLETED ACTIVITY SUMMARY
   // ============================================================
 
-  int averageScore = 78;
+  double averageScore = 0;
 
   List<_ScoreCategory> scoreCategories = [
-    _ScoreCategory(label: 'Excellent', count: 4, color: Color(0xFF3CA667)),
-    _ScoreCategory(label: 'Good', count: 6, color: Color(0xFF6DA9DF)),
-    _ScoreCategory(label: 'Average', count: 3, color: Color(0xFFE4A849)),
+    _ScoreCategory(label: 'Excellent', count: 0, color: Color(0xFF3CA667)),
+    _ScoreCategory(label: 'Good', count: 0, color: Color(0xFF6DA9DF)),
+    _ScoreCategory(label: 'Average', count: 0, color: Color(0xFFE4A849)),
     _ScoreCategory(
       label: 'Needs Improvement',
-      count: 1,
+      count: 0,
       color: Color(0xFFD87567),
     ),
   ];
 
-  List<double> learningAreaScores = [82, 76, 79];
+  List<double> learningAreaScores = [0, 0, 0];
 
   static const List<String> learningAreaLabels = [
     'English',
@@ -146,13 +146,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     activityService =
         widget.activityService ?? FirebaseActivityService.instance;
 
-    _loadAccounts();
-    _loadSchoolYear().then((_) {
-      if (mounted) {
-        _refreshPerformanceSummary();
-        _refreshRecentActivities();
-      }
-    });
+    _refreshDashboard();
   }
 
   // ============================================================
@@ -284,7 +278,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _setActiveSchoolYear() async {
     final String? schoolYear = selectedSchoolYear;
 
-    if (schoolYear == null) {
+    if (schoolYear == null ||
+        settingSchoolYear ||
+        refreshing ||
+        archivingSchoolYear) {
       return;
     }
 
@@ -295,13 +292,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           const SnackBar(
-            content: Text('Unarchive this school year in Registered Accounts first.'),
+            content: Text(
+              'Unarchive this school year in Registered Accounts first.',
+            ),
           ),
         );
 
       return;
     }
 
+    setState(() => settingSchoolYear = true);
     try {
       await archiveService.setCurrentSchoolYear(schoolYear);
 
@@ -309,10 +309,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       setState(() {
         currentSchoolYear = schoolYear;
+        _resetSchoolYearPerformanceData();
       });
 
       await _refreshPerformanceSummary();
-      await _refreshRecentActivities();
 
       if (!mounted) return;
 
@@ -331,11 +331,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             content: Text(error.toString().replaceFirst('Exception: ', '')),
           ),
         );
+    } finally {
+      if (mounted) setState(() => settingSchoolYear = false);
     }
   }
 
   Future<void> _showAddSchoolYearDialog() async {
-    final TextEditingController controller = TextEditingController();
+    String startingYear = '';
 
     final String? result = await showDialog<String>(
       context: context,
@@ -353,7 +355,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           content: TextField(
-            controller: controller,
+            onChanged: (value) => startingYear = value,
             keyboardType: TextInputType.number,
             maxLength: 4,
             autofocus: true,
@@ -377,7 +379,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                Navigator.pop(dialogContext, controller.text.trim());
+                Navigator.pop(dialogContext, startingYear.trim());
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: dashboardAccent,
@@ -390,13 +392,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       },
     );
 
-    controller.dispose();
-
     if (result == null) return;
 
     final int? startYear = int.tryParse(result);
 
-    if (startYear == null || result.length != 4) {
+    if (startYear == null ||
+        startYear < 1000 ||
+        startYear >= 9999 ||
+        result.length != 4) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context)
@@ -422,6 +425,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
+    if (!mounted) return;
+
+    try {
+      await archiveService.addSchoolYear(schoolYear);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to add school year: $error')),
+      );
+      return;
+    }
     if (!mounted) return;
 
     setState(() {
@@ -478,7 +492,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ];
 
     learningAreaScores = [0, 0, 0];
-    trendScores = [0, 0, 0, 0, 0, 0, 0];
+    trendScores = [];
+    trendLabels = [];
     recentActivities = [];
   }
 
@@ -486,114 +501,100 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // LOAD CURRENT SCHOOL YEAR PERFORMANCE
   // ============================================================
 
+  int _summaryRequest = 0;
+  bool refreshing = false;
+  bool settingSchoolYear = false;
+
   Future<void> _refreshPerformanceSummary() async {
-    if (!_isValidSchoolYear(currentSchoolYear)) {
-      if (!mounted) return;
-      setState(() {
-        _resetSchoolYearPerformanceData();
-      });
+    final request = ++_summaryRequest;
+    final year = currentSchoolYear;
+    if (!_isValidSchoolYear(year)) {
+      if (mounted) setState(_resetSchoolYearPerformanceData);
       return;
     }
-
     try {
-      final PerformanceService? service = performanceService;
-
-      if (service == null) {
-        if (!mounted) return;
-        setState(() {
-          _resetSchoolYearPerformanceData();
-        });
+      // Totals and trends use the full history, not just the newest feed entries.
+      final records = await activityService!.getRecentActivities(
+        schoolYear: year,
+        limit: 2147483647,
+      );
+      if (!mounted || request != _summaryRequest || year != currentSchoolYear) {
         return;
       }
-
-      final List<StudentPerformanceModel> performances = await service
-          .getPerformances(schoolYear: currentSchoolYear);
-
-      if (!mounted) return;
-
-      if (performances.isEmpty) {
-        setState(() {
-          _resetSchoolYearPerformanceData();
-        });
-        return;
-      }
-
-      double englishTotal = 0;
-      double mathematicsTotal = 0;
-      double scienceTotal = 0;
-      double overallTotal = 0;
-
-      int excellent = 0;
-      int good = 0;
-      int average = 0;
-      int needsImprovement = 0;
-
-      for (final StudentPerformanceModel performance in performances) {
-        englishTotal += performance.englishAverage;
-        mathematicsTotal += performance.mathematicsAverage;
-        scienceTotal += performance.scienceAverage;
-        overallTotal += performance.overallAverage;
-
-        final double score = performance.overallAverage;
-
-        if (score >= 90) {
-          excellent++;
-        } else if (score >= 75) {
-          good++;
-        } else if (score >= 60) {
-          average++;
-        } else {
-          needsImprovement++;
-        }
-      }
-
-      final double count = performances.length.toDouble();
-
+      final summary = DashboardSummary.fromRecords(records);
       setState(() {
-        averageScore = (overallTotal / count).round();
-
-        learningAreaScores = [
-          englishTotal / count,
-          mathematicsTotal / count,
-          scienceTotal / count,
-        ];
-
+        averageScore = summary.average;
+        learningAreaScores = summary.areaAverages;
         scoreCategories = [
-          _ScoreCategory(
-            label: 'Excellent',
-            count: excellent,
-            color: const Color(0xFF3CA667),
-          ),
-          _ScoreCategory(
-            label: 'Good',
-            count: good,
-            color: const Color(0xFF6DA9DF),
-          ),
-          _ScoreCategory(
-            label: 'Average',
-            count: average,
-            color: const Color(0xFFE4A849),
-          ),
-          _ScoreCategory(
-            label: 'Needs Improvement',
-            count: needsImprovement,
-            color: const Color(0xFFD87567),
-          ),
+          for (var i = 0; i < scoreCategories.length; i++)
+            _ScoreCategory(
+              label: scoreCategories[i].label,
+              count: summary.categories[i],
+              color: scoreCategories[i].color,
+            ),
         ];
+        trendScores = summary.trendScores;
+        trendLabels = summary.trendDates
+            .map((date) => '${date.month}/${date.day}')
+            .toList();
+        recentActivities = summary.records
+            .map(
+              (record) => _ActivityData(
+                occurredAt: record.completedAt,
+                time: _formatActivityTime(record.completedAt),
+                student: record.studentName,
+                activity: record.activityName,
+                learningArea: record.learningArea,
+                score: '${record.score.round()}%',
+              ),
+            )
+            .toList();
+        recentActivities.addAll([
+          for (final student in students)
+            if (legacyActivitySchoolYear(student.createdAt) == year)
+              _ActivityData(
+                occurredAt: student.createdAt,
+                time: _formatActivityTime(student.createdAt),
+                student: student.fullName.isEmpty
+                    ? student.username
+                    : student.fullName,
+                activity: 'Student registered',
+                learningArea: 'Registration',
+                score: '',
+              ),
+          for (final teacher in teachers)
+            if (legacyActivitySchoolYear(teacher.createdAt) == year)
+              _ActivityData(
+                occurredAt: teacher.createdAt,
+                time: _formatActivityTime(teacher.createdAt),
+                student: teacher.fullName.isEmpty
+                    ? teacher.username
+                    : teacher.fullName,
+                activity: 'Teacher registered',
+                learningArea: 'Registration',
+                score: '',
+              ),
+        ]);
+        recentActivities.sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
       });
     } catch (error) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(content: Text('Unable to load performance data: ')),
-        );
+      if (!mounted || request != _summaryRequest || year != currentSchoolYear) {
+        return;
+      }
+      setState(_resetSchoolYearPerformanceData);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to load dashboard data: $error')),
+      );
     }
   }
 
   Future<void> _archiveCurrentSchoolYear() async {
-    if (archivingSchoolYear) return;
+    if (archivingSchoolYear ||
+        refreshing ||
+        settingSchoolYear ||
+        !_isValidSchoolYear(currentSchoolYear)) {
+      return;
+    }
 
     setState(() {
       archivingSchoolYear = true;
@@ -606,7 +607,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       final List<ArchivedStudentSummary> summaries = [];
 
-      for (final StudentModel student in students) {
+      final archiveStudents = await accountService.getStudents();
+      for (final StudentModel student in archiveStudents.where(
+        (student) =>
+            student.schoolYear.isEmpty || student.schoolYear == yearToArchive,
+      )) {
         final StudentPerformanceModel? performance = performanceService == null
             ? null
             : await performanceService!.getStudentPerformance(
@@ -638,16 +643,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         students: summaries,
       );
 
-      if (performanceService != null) {
-        await performanceService!.clearSchoolYearPerformance(yearToArchive);
-      }
-
-      final ActivityService? activityService = this.activityService;
-
-      if (activityService != null) {
-        await activityService.clearSchoolYearActivities(yearToArchive);
-      }
-
+      // Preserve source history for reports and reopened years.
       final List<String> updatedArchivedYears = await archiveService
           .getArchivedSchoolYears();
 
@@ -769,7 +765,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       currentSchoolYear: currentSchoolYear,
       schoolYears: availableSchoolYears,
       selectedSchoolYear: selectedSchoolYear,
-      loading: loadingSchoolYear,
+      loading:
+          loadingSchoolYear ||
+          archivingSchoolYear ||
+          settingSchoolYear ||
+          refreshing,
       archiving: archivingSchoolYear,
 
       onSchoolYearChanged: (String? value) {
@@ -780,6 +780,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       onSetSchoolYear:
           loadingSchoolYear ||
+              refreshing ||
+              archivingSchoolYear ||
+              settingSchoolYear ||
               selectedSchoolYear == null ||
               selectedSchoolYear == currentSchoolYear
           ? null
@@ -789,6 +792,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       onArchiveSchoolYear:
           archivingSchoolYear ||
+              refreshing ||
+              settingSchoolYear ||
+              loadingAccounts ||
               loadingSchoolYear ||
               !_isValidSchoolYear(currentSchoolYear)
           ? null
@@ -822,7 +828,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: loadingAccounts ? null : _refreshDashboard,
+            onPressed: refreshing || archivingSchoolYear || settingSchoolYear
+                ? null
+                : _refreshDashboard,
             icon: const Icon(Icons.refresh_rounded, color: dashboardAccent),
           ),
 
@@ -1166,7 +1174,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 3),
 
               Text(
-                '$averageScore%',
+                '${averageScore.round()}%',
                 style: const TextStyle(
                   color: dashboardBrown,
                   fontSize: 31,
@@ -1177,7 +1185,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 1),
 
               Text(
-                averageScore == 0
+                !scoreCategories.any((category) => category.count > 0)
                     ? 'No Data'
                     : averageScore >= 90
                     ? 'Excellent'
@@ -1216,7 +1224,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
 
           child: Text(
-            averageScore == 0
+            !scoreCategories.any((category) => category.count > 0)
                 ? 'No scores recorded for this school year yet.'
                 : 'Scores are being recorded for completed activities.',
             style: TextStyle(
@@ -1271,8 +1279,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ============================================================
 
   Widget _learningAreaChart({required double height}) {
-    final bool hasLearningAreaData = learningAreaScores.any(
-      (score) => score > 0,
+    final bool hasLearningAreaData = scoreCategories.any(
+      (category) => category.count > 0,
     );
 
     if (!hasLearningAreaData) {
@@ -1458,7 +1466,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ============================================================
 
   Widget _trendChart({required double height}) {
-    final bool hasTrendData = trendScores.any((score) => score > 0);
+    final bool hasTrendData = trendScores.isNotEmpty;
 
     if (!hasTrendData) {
       return SizedBox(
@@ -1490,7 +1498,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         LineChartData(
           minX: 0,
 
-          maxX: (trendScores.length - 1).toDouble(),
+          maxX: trendScores.length > 1
+              ? (trendScores.length - 1).toDouble()
+              : 1,
 
           minY: 0,
           maxY: 100,
@@ -1582,6 +1592,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               }),
 
               isCurved: true,
+              preventCurveOverShooting: true,
 
               curveSmoothness: 0.35,
 
@@ -1613,52 +1624,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // LOAD RECENT ACTIVITY
   // ============================================================
 
-  Future<void> _refreshRecentActivities() async {
-    final ActivityService? service = activityService;
-
-    if (service == null || !_isValidSchoolYear(currentSchoolYear)) {
-      if (!mounted) return;
-      setState(() {
-        recentActivities = <_ActivityData>[];
-      });
-      return;
-    }
-
-    try {
-      final records = await service.getRecentActivities(
-        schoolYear: currentSchoolYear,
-        limit: 10,
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        recentActivities = records.map((record) {
-          return _ActivityData(
-            time: _formatActivityTime(record.completedAt),
-            student: record.studentName,
-            activity: record.activityName,
-            learningArea: record.learningArea,
-            score: '${record.score.round()}%',
-          );
-        }).toList();
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        recentActivities = <_ActivityData>[];
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Unable to load recent activity: ${error.toString().replaceFirst('Exception: ', '')}',
-          ),
-        ),
-      );
-    }
-  }
-
   String _formatActivityTime(DateTime value) {
+    if (value.year < 2000) return 'Unknown date';
     final DateTime time = value.toLocal();
     final DateTime now = DateTime.now();
 
@@ -1696,9 +1663,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ============================================================
 
   Future<void> _refreshDashboard() async {
-    await _loadAccounts();
-    await _refreshPerformanceSummary();
-    await _refreshRecentActivities();
+    if (refreshing || archivingSchoolYear || settingSchoolYear) return;
+    setState(() => refreshing = true);
+    try {
+      await Future.wait([_loadAccounts(), _loadSchoolYear()]);
+      if (!mounted) return;
+      await _refreshPerformanceSummary();
+    } finally {
+      if (mounted) setState(() => refreshing = false);
+    }
   }
 
   Widget _buildRecentActivity() {
@@ -1956,9 +1929,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
 
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
+                try {
+                  await FirebaseAdminAuthService().logout();
+                } catch (error) {
+                  if (!dialogContext.mounted) return;
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text('Unable to logout: $error')),
+                  );
+                  return;
+                }
+                if (!dialogContext.mounted || !mounted) return;
                 Navigator.pop(dialogContext);
-
                 Navigator.pushAndRemoveUntil(
                   context,
 
@@ -2094,7 +2076,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
 
                       Text(
-                        '$averageScore%',
+                        '${averageScore.round()}%',
 
                         style: const TextStyle(
                           color: dashboardBrown,
@@ -2696,6 +2678,7 @@ class _ScoreLegendRow extends StatelessWidget {
 // ============================================================
 
 class _ActivityData {
+  final DateTime occurredAt;
   final String time;
 
   final String student;
@@ -2707,6 +2690,7 @@ class _ActivityData {
   final String score;
 
   const _ActivityData({
+    required this.occurredAt,
     required this.time,
     required this.student,
     required this.activity,

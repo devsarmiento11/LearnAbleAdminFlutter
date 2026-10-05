@@ -3,10 +3,10 @@ service firebase.storage {
   match /b/{bucket}/o {
     function ownsModules(ownerUid) {
       let teacherId = request.auth.token.get('name', '');
-      return request.auth != null && request.auth.uid == ownerUid &&
+      return request.auth != null &&
         teacherId is string && teacherId.size() > 0 &&
         firestore.get(/databases/(default)/documents/users/$(teacherId)).data.role == 'teacher' &&
-        firestore.get(/databases/(default)/documents/users/$(teacherId)).data.authUid == ownerUid;
+        firestore.get(/databases/(default)/documents/users/$(teacherId)).data.authUid == request.auth.uid;
     }
     function studentCanDownload(ownerUid, moduleId, fileName) {
       let id = request.auth.token.get('name', '');

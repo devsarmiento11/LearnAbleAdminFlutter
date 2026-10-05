@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/archived_student_summary.dart';
 import 'archive_service.dart';
 
@@ -7,6 +8,10 @@ class FirebaseArchiveService implements ArchiveService {
     : _firestore = firestore ?? FirebaseFirestore.instance;
   static final FirebaseArchiveService instance = FirebaseArchiveService();
   final FirebaseFirestore _firestore;
+  Future<void> _cleanupMissingStudents() => FirebaseFunctions.instance
+      .httpsCallable('cleanupOrphanStudentData',
+          options: HttpsCallableOptions(timeout: const Duration(minutes: 9)))
+      .call<void>();
   DocumentReference<Map<String, dynamic>> get _settings =>
       _firestore.collection('adminSettings').doc('schoolYear');
   CollectionReference<Map<String, dynamic>> get _archives =>
@@ -14,13 +19,31 @@ class FirebaseArchiveService implements ArchiveService {
 
   @override
   Future<String> getCurrentSchoolYear() async =>
-      (await _settings.get()).data()?['currentSchoolYear']?.toString() ??
-      '2026-2027';
+      (await _settings.get()).data()?['currentSchoolYear']?.toString() ?? '';
+
+  void _validateYear(String year) {
+    final match = RegExp(r'^(\d{4})-(\d{4})$').firstMatch(year);
+    if (match == null || int.parse(match[2]!) != int.parse(match[1]!) + 1) {
+      throw Exception('Enter a valid school year, for example 2026-2027.');
+    }
+  }
+
+  @override
+  Future<void> addSchoolYear(String schoolYear) async {
+    _validateYear(schoolYear);
+    if ((await getArchivedSchoolYears()).contains(schoolYear)) {
+      throw Exception('Unarchive this school year first.');
+    }
+    await _settings.set({
+      'availableSchoolYears': FieldValue.arrayUnion([schoolYear]),
+    }, SetOptions(merge: true));
+  }
 
   @override
   Future<void> setCurrentSchoolYear(String schoolYear) async {
-    if (schoolYear.trim().isEmpty) {
-      throw Exception('School year cannot be empty.');
+    _validateYear(schoolYear);
+    if ((await getArchivedSchoolYears()).contains(schoolYear)) {
+      throw Exception('Unarchive this school year first.');
     }
     await _settings.set({
       'currentSchoolYear': schoolYear.trim(),
@@ -32,8 +55,13 @@ class FirebaseArchiveService implements ArchiveService {
       (data?[field] as List<dynamic>? ?? const []).whereType<String>().toList();
 
   @override
-  Future<List<String>> getUnarchivedSchoolYears() async =>
-      _years((await _settings.get()).data(), 'unarchivedSchoolYears')..sort();
+  Future<List<String>> getUnarchivedSchoolYears() async {
+    final data = (await _settings.get()).data();
+    return {
+      ..._years(data, 'unarchivedSchoolYears'),
+      ..._years(data, 'availableSchoolYears'),
+    }.toList()..sort();
+  }
 
   @override
   Future<void> unarchiveSchoolYear(String schoolYear) async {
@@ -84,8 +112,17 @@ class FirebaseArchiveService implements ArchiveService {
     await _settings.set({
       'archivedSchoolYears': FieldValue.arrayUnion([year]),
       'unarchivedSchoolYears': FieldValue.arrayRemove([year]),
+      'availableSchoolYears': FieldValue.arrayRemove([year]),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+    await _firestore.runTransaction((transaction) async {
+      final data = (await transaction.get(_settings)).data();
+      if (data?['currentSchoolYear'] == year) {
+        transaction.set(_settings, {
+          'currentSchoolYear': '',
+        }, SetOptions(merge: true));
+      }
+    });
   }
 
   List<ArchivedStudentSummary> _map(
@@ -104,13 +141,17 @@ class FirebaseArchiveService implements ArchiveService {
   }
 
   @override
-  Future<List<ArchivedStudentSummary>> getArchivedStudents() async =>
-      _map(await _archives.get());
+  Future<List<ArchivedStudentSummary>> getArchivedStudents() async {
+    await _cleanupMissingStudents();
+    return _map(await _archives.get());
+  }
   @override
   Future<List<ArchivedStudentSummary>> getArchivedStudentsBySchoolYear(
     String schoolYear,
-  ) async =>
-      _map(await _archives.where('schoolYear', isEqualTo: schoolYear).get());
+  ) async {
+    await _cleanupMissingStudents();
+    return _map(await _archives.where('schoolYear', isEqualTo: schoolYear).get());
+  }
   @override
   Future<List<String>> getArchivedSchoolYears() async {
     final data = (await _settings.get()).data();

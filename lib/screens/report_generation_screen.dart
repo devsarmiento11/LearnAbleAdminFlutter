@@ -551,18 +551,24 @@ class _PdfScreen extends StatelessWidget {
       foregroundColor: _brown,
     ),
     body: PdfPreview(
-      build: (_) async => bytes,
+      // PDF.js transfers the supplied buffer to its worker. Each preview/print
+      // request needs its own copy so resizing or printing cannot reuse a
+      // detached buffer, and the original remains available for downloading.
+      build: (_) async => Uint8List.fromList(bytes),
       pdfFileName: filename,
       canChangeOrientation: false,
       canChangePageFormat: false,
       canDebug: false,
       allowSharing: false,
       loadingWidget: const Center(child: CircularProgressIndicator()),
-      onError: (_, error) => const Center(
-        child: Text(
-          'PDF preview could not load. Please reopen the profile and try again.',
-        ),
-      ),
+      onError: (_, error) {
+        debugPrint('Profile PDF preview failed: $error');
+        return const Center(
+          child: Text(
+            'PDF preview could not load. Please reopen the profile and try again.',
+          ),
+        );
+      },
       actions: [
         PdfPreviewAction(
           icon: const Icon(Icons.download),

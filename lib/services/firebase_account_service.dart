@@ -186,5 +186,8 @@ class FirebaseAccountService implements AccountService {
   Future<void> deleteParent(String parentId) => _deleteAccount(parentId);
 
   Future<void> _deleteAccount(String id) =>
-      _functions.httpsCallable('deleteManagedAccount').call<void>({'id': id});
+      _functions.httpsCallable(
+        'deleteManagedAccount',
+        options: HttpsCallableOptions(timeout: const Duration(minutes: 9)),
+      ).call<void>({'id': id});
 }

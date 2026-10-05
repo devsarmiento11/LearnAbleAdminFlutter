@@ -9,6 +9,9 @@ abstract class ArchiveService {
 
   Future<void> setCurrentSchoolYear(String schoolYear);
 
+  /// Saves a selectable year without activating it.
+  Future<void> addSchoolYear(String schoolYear);
+
   /// Reopens a year without deleting its saved student summaries.
   Future<void> unarchiveSchoolYear(String schoolYear);
 

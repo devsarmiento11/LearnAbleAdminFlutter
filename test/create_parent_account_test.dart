@@ -18,6 +18,7 @@ class ParentAccounts extends AccountService {
   @override
   Future<List<StudentModel>> getStudents() async => [
     StudentModel.fromMap({'id': 'S2144'}),
+    StudentModel.fromMap({'id': '001234567899'}),
   ];
   @override
   Future<void> createParent({
@@ -54,7 +55,7 @@ Future<void> fillParent(
     'Enter Last Name': 'Doe',
     'Enter Email Address': 'jane@example.com',
     'Enter Parents ID (e.g. P1234)': 'P4321',
-    'Enter existing Student ID (e.g. S2144)': child,
+    'Enter existing Student ID or LRN (e.g. S2144 or 123456789999)': child,
     'Enter password': 'secret12',
     'Confirm password': confirmation,
   }.entries) {
@@ -114,7 +115,9 @@ void main() {
       await tester.tap(find.text(entry.key));
       await tester.pumpAndSettle();
       final prefix = entry.value.substring(0, 1);
-      final input = field('Enter '+entry.value+' ID (e.g. '+prefix+'1234)');
+      final input = field(entry.value == 'Student'
+          ? 'Enter Student ID or LRN (e.g. S1234 or 123456789999)'
+          : 'Enter '+entry.value+' ID (e.g. '+prefix+'1234)');
       expect(tester.widget<TextField>(input).controller!.text, isEmpty);
       expect(tester.widget<TextField>(input).readOnly, isFalse);
       expect(find.byTooltip('Generate ID'), findsNothing);
@@ -124,6 +127,23 @@ void main() {
       expect(tester.widget<TextField>(input).controller!.text, prefix+'4321');
     }
     expect(service.count, 0);
+  });
+
+  testWidgets('student login identifier accepts IDs and up to 12 LRN digits', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: CreateAccountScreen(accountService: ParentAccounts())));
+    await tester.pumpAndSettle();
+    final input = field('Enter Student ID or LRN (e.g. S1234 or 123456789999)');
+    final formField = find.ancestor(of: input, matching: find.byType(TextFormField));
+    final validator = tester.widget<TextFormField>(formField).validator!;
+    for (final id in ['S1234', '1', '123456789999', '001234567899']) {
+      await tester.ensureVisible(input);
+      await tester.enterText(input, id);
+      expect(tester.widget<TextField>(input).controller!.text, id);
+      expect(validator(id), isNull);
+    }
+    for (final id in ['', '1234567899999', '123abc', 'S0000', 'S12345']) {
+      expect(validator(id), isNotNull);
+    }
   });
 
   testWidgets(
@@ -161,6 +181,15 @@ void main() {
       );
     },
   );
+  testWidgets('parent links to an existing student by LRN and preserves leading zeros', (tester) async {
+    final service = ParentAccounts();
+    await openParent(tester, service);
+    await fillParent(tester, child: '001234567899');
+    expect(service.saved!.childrenId, '001234567899');
+    expect(service.saved!.toMap()['childrenId'], '001234567899');
+    expect(find.text('Account Created'), findsOneWidget);
+  });
+
   testWidgets('missing student and mismatched passwords do not save', (
     tester,
   ) async {

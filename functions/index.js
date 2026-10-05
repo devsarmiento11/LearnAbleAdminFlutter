@@ -5,6 +5,8 @@ const {FieldValue, getFirestore} = require('firebase-admin/firestore');
 const {createPromotionHandler} = require('./promotion');
 const {parentProfile} = require('./parent_account');
 const {saveUniqueProfile} = require('./account_uniqueness');
+const {createAccountDeletionHandler} = require('./account_deletion');
+const {createOrphanStudentCleanupHandler} = require('./orphan_student_cleanup');
 
 initializeApp();
 
@@ -12,6 +14,9 @@ const db = getFirestore();
 const auth = getAuth();
 const managedDomain = 'users.learnable.app';
 const allowedRoles = new Set(['student', 'teacher', 'parent']);
+exports.cleanupOrphanStudentData = onCall({timeoutSeconds: 540}, createOrphanStudentCleanupHandler({
+  db, FieldValue, requireAdmin,
+}));
 
 const studentEnrollment = require('./student_enrollment').createStudentEnrollmentHandlers({db, auth, FieldValue, HttpsError});
 exports.enrollStudent = onCall(studentEnrollment.enroll);
@@ -132,16 +137,6 @@ exports.updateManagedAccount = onCall(async (request) => {
   return {id};
 });
 
-exports.deleteManagedAccount = onCall(async (request) => {
-  await requireAdmin(request);
-  const id = requiredString(request.data, 'id');
-  const reference = db.collection('users').doc(id);
-  const existing = await reference.get();
-  if (!existing.exists) return {id};
-  const uid = existing.data().authUid;
-  if (uid) await auth.deleteUser(uid).catch(error => {
-    if (error.code !== 'auth/user-not-found') throw error;
-  });
-  await reference.delete();
-  return {id};
-});
+exports.deleteManagedAccount = onCall({timeoutSeconds: 540}, createAccountDeletionHandler({
+  db, auth, FieldValue, requireAdmin, requiredString,
+}));

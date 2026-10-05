@@ -86,13 +86,13 @@ service cloud.firestore {
         return isScoreTeacher() && request.auth.uid == ownerUid;
       }
       match /folders/{folderId} {
-        allow read: if ownsLibrary() || moduleStudent();
+        allow read: if isScoreTeacher() || moduleStudent();
         allow create: if ownsLibrary() &&
           request.resource.data.keys().hasOnly(['Name']) &&
           request.resource.data.Name is string &&
           request.resource.data.Name.size() > 0 && request.resource.data.Name.size() <= 100;
         allow update: if false;
-        allow delete: if ownsLibrary();
+        allow delete: if isScoreTeacher();
       }
       match /modules/{moduleId} {
         function validModule() {
@@ -105,11 +105,11 @@ service cloud.firestore {
             m.StoragePath is string && m.StoragePath.matches('teacherModules/' + ownerUid + '/' + moduleId + '/[a-f0-9]{32}[.]pdf') &&
             m.Archived is bool && m.Revision is int;
         }
-        allow read: if ownsLibrary() || (moduleStudent() &&
+        allow read: if isScoreTeacher() || (moduleStudent() &&
           resource.data.Archived == false && resource.data.Grade == moduleStudentGrade());
-        allow create: if ownsLibrary() && validModule() && request.resource.data.Revision == 1;
-        allow update: if ownsLibrary() && validModule() && request.resource.data.Revision == resource.data.Revision + 1;
-        allow delete: if ownsLibrary();
+        allow create: if isScoreTeacher() && validModule() && request.resource.data.Revision == 1;
+        allow update: if isScoreTeacher() && validModule() && request.resource.data.Revision == resource.data.Revision + 1;
+        allow delete: if isScoreTeacher();
       }
     }
 

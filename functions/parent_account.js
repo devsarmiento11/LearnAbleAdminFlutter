@@ -4,8 +4,8 @@ function parentProfile(id, username, profile, HttpsError) {
   }
   const text = (key) => typeof profile[key] === 'string' ? profile[key].trim() : '';
   const childrenId = text('childrenId').toUpperCase();
-  if (!/^S[0-9]{4}$/.test(childrenId)) {
-    throw new HttpsError('invalid-argument', 'Enter an existing Student ID in Children ID.');
+  if (!/^(S[0-9]{4}|[0-9]{1,12})$/.test(childrenId)) {
+    throw new HttpsError('invalid-argument', 'Enter an existing Student ID or LRN in Children ID or LRN.');
   }
   if (!text('firstName') || !text('lastName') || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(text('email'))) {
     throw new HttpsError('invalid-argument', 'First name, last name and a valid email are required.');
