@@ -54,17 +54,19 @@ class ProfileReport {
     year: '',
     activities: unassignedActivities,
   ).summaryRows;
-  static const subjects = ['English', 'Math', 'Science'];
-  static const quarters = ['1ST', '2ND', '3RD', '4TH'];
+  static const subjects = ['English', 'Science', 'Mathematics'];
+  static const quarters = ['1ST', '2ND', '3RD'];
   // The game stores one current grade sheet, not historical grade snapshots.
   bool get hasCurrentGrades => year == student.currentYear;
   double? grade(String subject, String quarter) {
-    if (!hasCurrentGrades) return null;
+    if (!hasCurrentGrades || !quarters.contains(quarter)) return null;
     final grades = student.data['academicGrades'];
     if (grades is! Map) return null;
-    final value = double.tryParse(
-      '${grades['${subject.toUpperCase()}_$quarter']}',
-    );
+    // Unity saves Mathematics under MATH; keep that stored key unchanged.
+    final key = subject.toUpperCase() == 'MATHEMATICS'
+        ? 'MATH'
+        : subject.toUpperCase();
+    final value = double.tryParse('${grades['${key}_$quarter']}');
     return value != null && value.isFinite && value >= 0 && value <= 100
         ? value
         : null;

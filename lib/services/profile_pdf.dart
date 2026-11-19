@@ -141,6 +141,136 @@ Future<Uint8List> buildProfilePdf(ProfileReport report) async {
     padding: const pw.EdgeInsets.symmetric(vertical: 12),
     child: pw.Text(value, style: pw.TextStyle(fontSize: 11, color: brown)),
   );
+  pw.Widget learningProgress() {
+    const widths = <int, pw.TableColumnWidth>{
+      0: pw.FlexColumnWidth(5),
+      1: pw.FlexColumnWidth(.85),
+      2: pw.FlexColumnWidth(.85),
+      3: pw.FlexColumnWidth(.85),
+      4: pw.FlexColumnWidth(1),
+      5: pw.FlexColumnWidth(1.4),
+    };
+    final lineColor = PdfColor.fromHex('#A76529');
+    final border = pw.TableBorder.all(color: lineColor, width: .5);
+    pw.Widget cell(String text, {bool left = false, double height = 16}) =>
+        pw.Container(
+          height: height,
+          alignment: left ? pw.Alignment.centerLeft : pw.Alignment.center,
+          padding: const pw.EdgeInsets.symmetric(horizontal: 6),
+          child: pw.Text(text, style: pw.TextStyle(fontSize: 9, color: brown)),
+        );
+    return pw.Center(
+      child: pw.Container(
+        width: 475,
+        padding: const pw.EdgeInsets.fromLTRB(12, 10, 12, 0),
+        child: pw.Column(
+          children: [
+            pw.Container(
+              padding: const pw.EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 6,
+              ),
+              child: pw.Text(
+                'REPORT ON LEARNING PROGRESS AND ACHIEVEMENT',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  color: brown,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+            pw.SizedBox(height: 10),
+            pw.Table(
+              border: border,
+              columnWidths: const {
+                0: pw.FlexColumnWidth(5),
+                1: pw.FlexColumnWidth(2.55),
+                2: pw.FlexColumnWidth(1),
+                3: pw.FlexColumnWidth(1.4),
+              },
+              children: [
+                pw.TableRow(
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#F4C578'),
+                  ),
+                  children: [
+                    cell('Learning Areas', height: 30),
+                    pw.Column(
+                      children: [
+                        cell('Term', height: 15),
+                        pw.Table(
+                          defaultColumnWidth: const pw.FlexColumnWidth(),
+                          border: pw.TableBorder(
+                            top: pw.BorderSide(color: lineColor, width: .5),
+                            verticalInside: pw.BorderSide(
+                              color: lineColor,
+                              width: .5,
+                            ),
+                          ),
+                          children: [
+                            pw.TableRow(
+                              children: [
+                                for (var term = 1; term <= 3; term++)
+                                  cell('$term', height: 15),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    cell('Final\nGrade', height: 30),
+                    cell('Remarks', height: 30),
+                  ],
+                ),
+              ],
+            ),
+            pw.Table(
+              border: border,
+              columnWidths: widths,
+              children: [
+                for (final row in report.gradeRows)
+                  pw.TableRow(
+                    children: [
+                      for (var i = 0; i < row.length; i++)
+                        cell(row[i] == '-' ? '' : row[i], left: i == 0),
+                    ],
+                  ),
+                // Preserve the reference form's unused writing rows.
+                for (var row = report.gradeRows.length; row < 13; row++)
+                  pw.TableRow(
+                    children: [
+                      for (var column = 0; column < 6; column++) cell(''),
+                    ],
+                  ),
+              ],
+            ),
+            pw.Table(
+              border: border,
+              columnWidths: const {
+                0: pw.FlexColumnWidth(7.55),
+                1: pw.FlexColumnWidth(1),
+                2: pw.FlexColumnWidth(1.4),
+              },
+              children: [
+                pw.TableRow(
+                  children: [
+                    cell('General Average'),
+                    cell(
+                      report.generalAverage == null
+                          ? ''
+                          : ProfileReport.number(report.generalAverage),
+                    ),
+                    cell(''),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   section('Profile', [
     if (report.summaryRows.isEmpty)
       note('No activities recorded for this school year.')
@@ -192,16 +322,7 @@ Future<Uint8List> buildProfilePdf(ProfileReport report) async {
       note(
         'Historical quarterly grades were not saved for this school year. Current grades are not included.',
       ),
-    table([
-      'Subject',
-      '1st',
-      '2nd',
-      '3rd',
-      '4th',
-      'Final Grade',
-      'Remarks',
-    ], report.gradeRows),
-    note('General Average: ${ProfileReport.number(report.generalAverage)}'),
+    learningProgress(),
     note("Teacher's Remark:"),
     // Bound each block so long remarks can continue on subsequent pages.
     ...((report.teacherRemark.isEmpty

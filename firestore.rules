@@ -88,7 +88,7 @@ service cloud.firestore {
       match /folders/{folderId} {
         allow read: if isScoreTeacher() || moduleStudent();
         allow create: if ownsLibrary() &&
-          request.resource.data.keys().hasOnly(['Name']) &&
+          request.resource.data.keys().hasOnly(['Name', 'CreatedAt']) &&
           request.resource.data.Name is string &&
           request.resource.data.Name.size() > 0 && request.resource.data.Name.size() <= 100;
         allow update: if false;
@@ -97,12 +97,12 @@ service cloud.firestore {
       match /modules/{moduleId} {
         function validModule() {
           let m = request.resource.data;
-          return m.keys().hasOnly(['Title', 'FolderId', 'Grade', 'FileName', 'StoragePath', 'Archived', 'Revision']) &&
+          return m.keys().hasOnly(['Title', 'FolderId', 'Grade', 'FileName', 'StoragePath', 'Archived', 'Revision', 'CreatedAt']) &&
             m.Title is string && m.Title.size() > 0 && m.Title.size() <= 100 &&
             m.FolderId is string && exists(/databases/$(database)/documents/teacherLibraries/$(ownerUid)/folders/$(m.FolderId)) &&
             m.Grade is int && m.Grade >= 1 && m.Grade <= 6 &&
             m.FileName is string && m.FileName.size() > 0 && m.FileName.size() <= 255 &&
-            m.StoragePath is string && m.StoragePath.matches('teacherModules/' + ownerUid + '/' + moduleId + '/[a-f0-9]{32}[.]pdf') &&
+            m.StoragePath is string && m.StoragePath.matches('teacherModules/' + ownerUid + '/' + moduleId + '/[a-f0-9]{32}[.](pdf|mp4|m4v|mov|webm|png|jpg|jpeg|gif|webp)') &&
             m.Archived is bool && m.Revision is int;
         }
         allow read: if isScoreTeacher() || (moduleStudent() &&
@@ -111,6 +111,33 @@ service cloud.firestore {
         allow update: if isScoreTeacher() && validModule() && request.resource.data.Revision == resource.data.Revision + 1;
         allow delete: if isScoreTeacher();
       }
+    }
+
+    // Private latest document for each authenticated parent.
+    match /parentDocuments/{ownerUid} {
+      function documentParent() {
+        let id = request.auth.token.get('name', '');
+        let p = get(/databases/$(database)/documents/users/$(id)).data;
+        return signedIn() && request.auth.uid == ownerUid && p.role == 'parent' &&
+          p.authUid == ownerUid && p.status == 'Active';
+      }
+      function validParentDocument() {
+        let m = request.resource.data;
+        let id = request.auth.token.get('name', '');
+        let p = get(/databases/$(database)/documents/users/$(id)).data;
+        let parts = m.StoragePath.split('/');
+        return m.keys().hasOnly(['ParentId', 'ChildId', 'FileName', 'StoragePath', 'UploadedAt']) &&
+          m.ParentId == id && m.ChildId == p.childrenId && m.ChildId is string && m.ChildId.size() > 0 &&
+          m.FileName is string && m.FileName.size() > 0 && m.FileName.size() <= 255 &&
+          m.UploadedAt == request.time && parts.size() == 4 && parts[0] == 'parentDocuments' &&
+          parts[1] == ownerUid && parts[2] == p.childrenId &&
+          parts[3].matches('[a-f0-9]{32}[.](pdf|doc|docx|mp4|m4v|mov|webm|png|jpg|jpeg|gif|webp)');
+      }
+      allow get: if documentParent();
+      allow get, list: if isScoreTeacher() &&
+        get(/databases/$(database)/documents/users/$(request.auth.token.name)).data.status == 'Active';
+      allow create, update: if documentParent() && validParentDocument();
+      allow list, delete: if false;
     }
 
     match /users/{userId} {
@@ -131,6 +158,18 @@ service cloud.firestore {
       // A parent may read the linked child's history but cannot impersonate them.
       allow create: if canSaveOwnActivity();
       allow update, delete: if isAdmin();
+    }
+
+    match /leaderboardStarts/{studentId} {
+      allow read: if isScoreTeacher() || isAdmin();
+      allow create, update: if moduleStudent() &&
+        request.auth.token.get('name', '') == studentId &&
+        request.resource.data.keys().hasOnly(['authUid']) &&
+        request.resource.data.authUid == request.auth.uid;
+    }
+
+    match /adminSettings/schoolYear {
+      allow get: if isScoreTeacher();
     }
 
     match /studentPerformance/{document=**} {

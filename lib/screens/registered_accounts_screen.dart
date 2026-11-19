@@ -2803,7 +2803,7 @@ class _RegisteredAccountsScreenState extends State<RegisteredAccountsScreen> {
             const SizedBox(height: 8),
 
             const Text(
-              'ADMIN PANEL',
+              'HEAD TEACHER PANEL',
 
               style: TextStyle(
                 color: Color(0xFF6A4320),

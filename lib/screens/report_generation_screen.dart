@@ -435,7 +435,7 @@ class _ReportGenerationScreenState extends State<ReportGenerationScreen> {
           Image.asset('assets/images/logo.png', width: 100, height: 80),
           const SizedBox(height: 8),
           const Text(
-            'ADMIN PANEL',
+            'HEAD TEACHER PANEL',
             style: TextStyle(
               letterSpacing: 3,
               color: _brown,

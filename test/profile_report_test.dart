@@ -6,6 +6,38 @@ import '../tool/report_preview.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('Report uses three terms and the saved MATH grades for Mathematics', () {
+    const report = ProfileReport(
+      student: ReportStudent('test', {
+        'schoolYear': '2026-2027',
+        'academicGrades': {
+          'MATH_1ST': 80,
+          'MATH_2ND': 90,
+          'MATH_3RD': 100,
+          'MATH_4TH': 0,
+          'ENGLISH_1ST': 90,
+          'SCIENCE_1ST': 90,
+        },
+      }, {}),
+      year: '2026-2027',
+      activities: [],
+    );
+    expect(report.gradeRows.map((row) => row.first), [
+      'English',
+      'Science',
+      'Mathematics',
+    ]);
+    expect(report.gradeRows.last, [
+      'Mathematics',
+      '80',
+      '90',
+      '100',
+      '90',
+      'Excellent',
+    ]);
+    expect(report.grade('Mathematics', '4TH'), isNull);
+    expect(report.generalAverage, 90);
+  });
   test(
     'Missing quarters stay blank and averages match the Unity grade rules',
     () async {

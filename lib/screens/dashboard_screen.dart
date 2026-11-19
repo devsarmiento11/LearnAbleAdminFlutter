@@ -896,7 +896,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         // HEADER
                         // ================================
                         const Text(
-                          'Welcome back, Admin!',
+                          'Welcome Back Head Teacher!',
                           style: TextStyle(
                             color: dashboardBrown,
                             fontSize: 23,
@@ -1770,7 +1770,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 8),
 
             const Text(
-              'ADMIN PANEL',
+              'HEAD TEACHER PANEL',
 
               style: TextStyle(
                 color: Color(0xFF6A4320),

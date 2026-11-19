@@ -22,11 +22,53 @@ service firebase.storage {
         module.Archived == false && module.Grade == numericGrade &&
         module.StoragePath == 'teacherModules/' + ownerUid + '/' + moduleId + '/' + fileName;
     }
+    match /parentDocuments/{ownerUid}/{childId}/{fileName} {
+      function teacherCanView() {
+        let teacherId = request.auth.token.get('name', '');
+        let teacher = firestore.get(/databases/(default)/documents/users/$(teacherId)).data;
+        let record = firestore.get(/databases/(default)/documents/parentDocuments/$(ownerUid)).data;
+        return request.auth != null && teacher.role == 'teacher' && teacher.authUid == request.auth.uid &&
+          teacher.status == 'Active' && record.ChildId == childId &&
+          record.StoragePath == 'parentDocuments/' + ownerUid + '/' + childId + '/' + fileName;
+      }
+      function documentParent() {
+        let id = request.auth.token.get('name', '');
+        let p = firestore.get(/databases/(default)/documents/users/$(id)).data;
+        return request.auth != null && request.auth.uid == ownerUid && p.role == 'parent' &&
+          p.authUid == ownerUid && p.status == 'Active' && p.childrenId == childId;
+      }
+      function validParentFile() {
+        let extension = fileName.split('[.]')[1];
+        let types = {
+          'pdf': 'application/pdf', 'doc': 'application/msword',
+          'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'mp4': 'video/mp4', 'm4v': 'video/x-m4v', 'mov': 'video/quicktime', 'webm': 'video/webm',
+          'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'
+        };
+        return fileName.matches('[a-f0-9]{32}[.](pdf|doc|docx|mp4|m4v|mov|webm|png|jpg|jpeg|gif|webp)') &&
+          request.resource.contentType == types.get(extension, '') &&
+          request.resource.size > 0 && request.resource.size <= 25 * 1024 * 1024;
+      }
+      allow get: if documentParent() || teacherCanView();
+      allow create: if documentParent() && validParentFile();
+      allow list, update, delete: if false;
+    }
     match /teacherModules/{ownerUid}/{moduleId}/{fileName} {
       allow read: if ownsModules(ownerUid) || studentCanDownload(ownerUid, moduleId, fileName);
-      allow create: if ownsModules(ownerUid) && fileName.matches('[a-f0-9]{32}[.]pdf') &&
+      function validModuleFile() {
+        return (fileName.matches('[a-f0-9]{32}[.]pdf') && request.resource.contentType == 'application/pdf') ||
+          (fileName.matches('[a-f0-9]{32}[.]mp4') && request.resource.contentType == 'video/mp4') ||
+          (fileName.matches('[a-f0-9]{32}[.]m4v') && request.resource.contentType == 'video/x-m4v') ||
+          (fileName.matches('[a-f0-9]{32}[.]mov') && request.resource.contentType == 'video/quicktime') ||
+          (fileName.matches('[a-f0-9]{32}[.]webm') && request.resource.contentType == 'video/webm') ||
+          (fileName.matches('[a-f0-9]{32}[.]png') && request.resource.contentType == 'image/png') ||
+          (fileName.matches('[a-f0-9]{32}[.](jpg|jpeg)') && request.resource.contentType == 'image/jpeg') ||
+          (fileName.matches('[a-f0-9]{32}[.]gif') && request.resource.contentType == 'image/gif') ||
+          (fileName.matches('[a-f0-9]{32}[.]webp') && request.resource.contentType == 'image/webp');
+      }
+      allow create: if ownsModules(ownerUid) && validModuleFile() &&
         request.resource.size > 0 && request.resource.size <= 25 * 1024 * 1024 &&
-        request.resource.contentType == 'application/pdf';
+        request.resource.contentType is string;
       // Immutable versions protect concurrent readers and failed metadata commits.
       allow update, delete: if false;
     }
