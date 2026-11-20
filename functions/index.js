@@ -1,12 +1,15 @@
 const {onCall, HttpsError} = require('firebase-functions/v2/https');
+const {onDocumentCreated} = require('firebase-functions/v2/firestore');
 const {initializeApp} = require('firebase-admin/app');
 const {getAuth} = require('firebase-admin/auth');
 const {FieldValue, getFirestore} = require('firebase-admin/firestore');
 const {createPromotionHandler} = require('./promotion');
+const {createAcademicPromotionHandler} = require('./academic_promotion');
 const {parentProfile} = require('./parent_account');
 const {saveUniqueProfile} = require('./account_uniqueness');
 const {createAccountDeletionHandler} = require('./account_deletion');
 const {createOrphanStudentCleanupHandler} = require('./orphan_student_cleanup');
+const {trimStudentAttempts} = require('./attempt_retention');
 
 initializeApp();
 
@@ -14,6 +17,14 @@ const db = getFirestore();
 const auth = getAuth();
 const managedDomain = 'users.learnable.app';
 const allowedRoles = new Set(['student', 'teacher', 'parent']);
+exports.retainLatestStudentAttempts = onDocumentCreated(
+    {document: 'activityScores/{attemptId}', retry: true},
+    async event => {
+      const userId = event.data?.get('userId');
+      if (typeof userId === 'string' && userId.trim()) {
+        await trimStudentAttempts(db, userId);
+      }
+    });
 exports.cleanupOrphanStudentData = onCall({timeoutSeconds: 540}, createOrphanStudentCleanupHandler({
   db, FieldValue, requireAdmin,
 }));
@@ -24,6 +35,9 @@ exports.updateStudentEnrollment = onCall(studentEnrollment.update);
 
 exports.promoteArchivedStudents = onCall(createPromotionHandler({
   db, FieldValue, HttpsError, requireAdmin,
+}));
+exports.promoteStudentAndReset = onCall({timeoutSeconds: 120}, createAcademicPromotionHandler({
+  db, FieldValue, HttpsError,
 }));
 
 function managedEmail(username) {
